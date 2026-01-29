@@ -1,0 +1,5 @@
+*.mp4
+.idea/
+.venv/
+__pycache__/
+*.pyc
