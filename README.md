@@ -7,7 +7,10 @@
   - Pretrained YOLO / MobileNet for Object tracking
   - Audio?
   - FPS CAP?
+- Cognition Gate improvement
+  - Learned Binary Classifier
 - Event Embeddings (CLIP / VideoCLIP Lightweight)
+  - Frame Captioning?
 - LLM-Integration
 - Evaluation
   - Measure EPFE vs No EPFE
