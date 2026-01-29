@@ -3,12 +3,6 @@ import cv2
 import numpy as np
 
 # For now the model just looks for motion and scene change.
-# Need to finetune later.
-# Spatial Motion Features (Local)
-# Pretrained YOLO / MobileNet for Object tracking
-# Audio?
-# Measure EPFE vs no EPFE
-# Cap FPS to video to make it live
 class Perception:
     def __init__(self):
         self.prev_frame = None
