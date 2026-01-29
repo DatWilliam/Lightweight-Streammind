@@ -1,1 +1,1 @@
-https://www.kaggle.com/datasets/shreyamainkar/football-soccer-videos-dataset
+## A lightweight version of StreamMind for my Bachelor-Thesis
