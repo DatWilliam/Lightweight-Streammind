@@ -2,7 +2,7 @@
 
 class EventGate:
     # Thresholds : exceeding triggers event
-    def __init__(self, motion_thresh=0.01, scene_thresh=0.01):
+    def __init__(self, motion_thresh=1, scene_thresh=0.35):
         self.motion_thresh = motion_thresh
         self.scene_thresh = scene_thresh
         self.last_trigger_frame = -1  # how many frames since last event trigger
