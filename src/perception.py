@@ -1,37 +1,52 @@
 # Lightweight Event Preserving Feature Extractor : Generates Perception-Token
-import cv2
-import numpy as np
 
-# For now the model just looks for motion and scene change.
+import cv2
+import torch
+import numpy as np
+from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
+
 class Perception:
-    def __init__(self):
-        self.prev_frame = None
+    def __init__(self, alpha=0.05):
+        self.prev_feature = None
+        self.state = None # long term change
+        self.alpha = alpha
+
+        self.cnn = mobilenet_v3_small(
+            weights=MobileNet_V3_Small_Weights.DEFAULT
+        )
+        self.cnn.classifier = torch.nn.Identity() # remove classifier, just feature
+        self.cnn.eval() # to use model, not train
+
+        for p in self.cnn.parameters():
+            p.requires_grad = False # lock the parameters, no refining
 
     def process_frame(self, frame):
-        # Converts the frame to shades of gray to detect motion easier
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame = cv2.resize(frame, (224, 224)) # MobileNet takes 224x224
+        frame = frame[:, :, ::-1] / 255.0 # BGR -> RGB
+        # transform opencv to pytorch format
+        frame = torch.tensor(frame).permute(2, 0, 1).unsqueeze(0).float()
 
-        # Motion Score
-        if self.prev_frame is None:
-            motion_score = 0
-        else:
-            diff = cv2.absdiff(gray, self.prev_frame) # pixel diff this vs. prev frame
-            motion_score = np.mean(diff) / 255.0  # average
+        # no_grad since we dont train
+        with torch.no_grad():
+            feature = self.cnn(frame).squeeze().numpy()
 
-        # To look for scene change we observe the global frame structure not the exact position of every pixel
-        # We check if there is a lot of global change : How often is every shade of grey apparent
-        scene_change_score = 0
-        if self.prev_frame is not None:
-            hist_prev = cv2.calcHist([self.prev_frame], [0], None, [256], [0, 256])
-            hist_curr = cv2.calcHist([gray], [0], None, [256], [0, 256])
-            hist_prev = cv2.normalize(hist_prev, hist_prev).flatten()
-            hist_curr = cv2.normalize(hist_curr, hist_curr).flatten()
-            # 1 -> identical; 0 -> full different
-            scene_change_score = 1 - cv2.compareHist(hist_prev, hist_curr, cv2.HISTCMP_CORREL)
+        # for first frame, no prev
+        if self.state is None:
+            self.state = feature
+            self.prev_feature = feature
+            return {"event_score": 0.0}
 
-        self.prev_frame = gray.copy()
+        # Exponential Moving Average (!)
+        new_state = self.alpha * feature + (1-self.alpha) * self.state
+
+        # Event score = semantic change
+        event_score = np.linalg.norm(new_state - self.state)
+
+        self.state = new_state
+        self.prev_feature = feature
 
         return {
-            "motion_score": motion_score,
-            "scene_change_score": scene_change_score
+            "event_score": float(event_score),
+            "state_norm": float(np.linalg.norm(self.state))
         }
+
