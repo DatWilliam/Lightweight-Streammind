@@ -6,7 +6,7 @@ import numpy as np
 from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
 
 class Perception:
-    def __init__(self, alpha=0.05):
+    def __init__(self, alpha=0.10):
         self.prev_feature = None
         self.state = None # long term change
         self.alpha = alpha
