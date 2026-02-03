@@ -6,17 +6,17 @@ import torch
 import numpy as np
 
 class Perception:
-    def __init__(self, alpha=0.15):
+    def __init__(self, alpha=0.7):
         self.state = None
         self.alpha = alpha
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        # ViT-B/32 ViT-B/16 RN50x4 vs. frame skipping
-        self.model, self.preprocess = clip.load("ViT-B/32", device=self.device)
+        # openai/clip-vit-base-patch32 test?
+        self.model, self.preprocess = clip.load("ViT-L/14@336px", device=self.device) # same version as streammind
         self.model.eval()
 
-        for p in self.model.parameters():
-            p.requires_grad = False #?
+        for param in self.model.parameters(): # freeze
+            param.requires_grad = False
 
     def process_frame(self, frame):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -24,7 +24,6 @@ class Perception:
 
         # https://github.com/openai/CLIP
         image = self.preprocess(image).unsqueeze(0).to(self.device)
-        # text = clip.tokenize(["a diagram", "a dog", "a cat"]).to(this.device)
 
         with torch.no_grad():
             feature = self.model.encode_image(image)
@@ -53,16 +52,18 @@ class Perception:
         image = self.preprocess(image).unsqueeze(0).to(self.device)
 
         key_events = [
-            "a goal being scored",
-            "players celebrating a goal",
-            "penalty kick",
-            "goalkeeper making a save",
-            "referee showing a red card",
-            "referee showing a yellow card",
-            "players celebrating",
-            "close-up replay",
-            "wide view of football pitch",
-            "ball in the penalty box"
+            "Kick-off",
+            "Ball out of play",
+            "Throw-in",
+            "Corner",
+            "Shots on target",
+            "Offside",
+            "Goal",
+            "Clearance",
+            "Foul",
+            "Yellow card",
+            "Red card",
+            "Substitution"
         ]
 
         text = clip.tokenize(key_events).to(self.device)
@@ -76,7 +77,7 @@ class Perception:
             text_features /= text_features.norm(dim=-1, keepdim=True)
 
             similarity  = (100.0 * image_features @ text_features.T).softmax(dim=-1)
-            values, indices  = similarity [0].topk(3)
+            values, indices  = similarity[0].topk(3)
 
         results = []
         for value, index in zip(values, indices):
