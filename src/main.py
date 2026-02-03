@@ -1,3 +1,5 @@
+import json
+
 from perception import Perception
 from event_gate import EventGate
 from utils import load_video
@@ -10,17 +12,17 @@ video_paths = [
 perception = Perception()
 gate = EventGate()
 
-event_log = []
+debug = False
+SKIP_RATE = 5
 
-debug = True
-SKIP_RATE = 3
+test_data_path = "../data/soccernet/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/Labels.json"
 
 event_sum = 0
 frame_idx = 0
-video_idx = 0
+video_idx = 1
 
 for video_path in video_paths:
-    print(f"\n=== Processing Video {video_idx+1}: {video_path} ===")
+    print(f"\n=== Processing Video {video_idx}: {video_path} ===")
 
     for i, frame in enumerate(load_video(video_path)):
         frame_idx += 1

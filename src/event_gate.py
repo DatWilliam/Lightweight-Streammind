@@ -1,5 +1,5 @@
 class EventGate:
-    def __init__(self, threshold=0.085, cooldown=30):
+    def __init__(self, threshold=0.12, cooldown=30):
         self.threshold = threshold
         self.last_event_frame = -cooldown
         self.cooldown = cooldown
