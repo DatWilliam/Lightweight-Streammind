@@ -1,5 +1,8 @@
 *.mp4
+*.json
+*.mkv
 .idea/
 .venv/
 __pycache__/
 *.pyc
+data/download_soccernet.py

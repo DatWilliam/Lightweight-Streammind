@@ -4,13 +4,7 @@ from utils import load_video
 import cv2
 
 video_paths = [
-    "../data/1.mp4"
-    #"../data/act1.mp4",
-    #"../data/act2.mp4",
-    #"../data/act3.mp4",
-    #"../data/act4.mp4",
-    #"../data/act5.mp4",
-    #"../data/act6.mp4",
+    "../data/soccernet/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/1_224p.mkv"
 ]
 
 perception = Perception()
