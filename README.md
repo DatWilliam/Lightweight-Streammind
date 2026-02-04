@@ -2,7 +2,7 @@
 
 ## TODO:
 - EPFE:
-  - EMA vs. SSM / Mamba
+  - EMA vs. SSM / Mamba (GRU??)
 - Cognition Gate:
   - Learned Binary Classifier
 - Train With Data

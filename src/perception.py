@@ -34,7 +34,7 @@ class Perception:
             self.state = feature
             return {"event_score": 0.0}
 
-        new_state = self.alpha * feature + (1 - self.alpha) * self.state
+        new_state = self.alpha * self.state + (1 - self.alpha) * feature
 
         # Event score = semantic change
         event_score = np.linalg.norm(new_state - self.state)
