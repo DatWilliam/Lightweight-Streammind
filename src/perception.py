@@ -12,7 +12,8 @@ class Perception:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.model, self.preprocess = clip.load(
-            "ViT-L/14@336px", # same version as streammind also try clip-vit-base-patch32
+            #"ViT-L/14@336px", # same version as streammind
+            "ViT-B/32",
             device=self.device
         )
         self.model.eval()

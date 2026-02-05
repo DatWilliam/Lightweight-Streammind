@@ -8,6 +8,35 @@ from src.utils import load_video
 video_path = "../data/soccernet/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/1_224p.mkv"
 label_path = "../data/soccernet/england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/Labels.json"
 
+
+def save_results(params, metrics, filename="results.json"):
+    result = {
+        "parameters": params,
+        "metrics": metrics
+    }
+
+    try:
+        with open(filename, "r") as f:
+            results = json.load(f)
+    except FileNotFoundError:
+        results = []
+
+    results.append(result)
+
+    with open(filename, "w") as f:
+        json.dump(results, f, indent=2)
+
+PARAMS = {
+    "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+    "model": "ViT-B/32",
+    "frame_skip": 2,
+    "alpha": 0.3,
+    "window_size": 60,
+    "k": 2.0,
+    "cooldown": 45,
+    "tolerance": 35
+}
+
 # Return arr with all 'ground truth' event frames
 def load_gt_events(half):
     with open(label_path, "r", encoding="utf-8") as f:
@@ -20,11 +49,11 @@ def load_gt_events(half):
 
     return sorted(events)
 
-perception = Perception()
-gate = EventGate()
+perception = Perception(PARAMS["alpha"])
+gate = EventGate(PARAMS["window_size"], PARAMS["k"], PARAMS["cooldown"])
 
-SKIP_RATE = 3
-TOLERANCE = 50
+SKIP_RATE = PARAMS["frame_skip"]
+TOLERANCE = PARAMS["tolerance"]
 
 frame_idx = 0
 video_idx = 1
@@ -63,10 +92,23 @@ avg_delay = sum(delays) / len(delays) if delays else float("inf")
 llm_calls = len(trigger_frames)
 total_frames = frame_idx // SKIP_RATE
 
+metrics = {
+    "total_gt_events": len(gt_events),
+    "detected_events": len(gt_matched),
+    "event_recall": event_recall,
+    "average_delay": avg_delay,
+    "llm_calls": llm_calls,
+    "reduction_percent": (1 - llm_calls / total_frames) * 100
+}
+
 print("\n=== Event Gate Evaluation ===")
-print(f"Total GT Events:     {len(gt_events)}")
-print(f"Detected Events:     {len(gt_matched)}")
-print(f"Event Recall:        {event_recall:.2%}")
-print(f"Average Delay:       {avg_delay:.1f} frames")
-print(f"LLM Calls (Triggers):{llm_calls}")
-print(f"Reduction vs per-step: {(1 - llm_calls / total_frames) * 100:.1f}%")
+print(f"Total GT Events:     {metrics['total_gt_events']}")
+print(f"Detected Events:     {metrics['detected_events']}")
+print(f"Event Recall:        {metrics['event_recall']:.2%}")
+print(f"Average Delay:       {metrics['average_delay']:.1f} frames")
+print(f"LLM Calls (Triggers):{metrics['llm_calls']}")
+print(f"Reduction vs per-step: {metrics['reduction_percent']:.1f}%")
+
+# Save results
+save_results(PARAMS, metrics)
+print("\n✓ Results saved to results.json")
