@@ -1,0 +1,182 @@
+[
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-L/14@336px",
+      "frame_skip": 3,
+      "alpha": 0.7,
+      "window_size": 60,
+      "k": 1.5,
+      "cooldown": 45,
+      "tolerance": 50
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 63,
+      "event_recall": 0.7,
+      "average_delay": -6.841269841269841,
+      "llm_calls": 663,
+      "reduction_percent": 97.05333333333334
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-L/14@336px",
+      "frame_skip": 5,
+      "alpha": 0.7,
+      "window_size": 90,
+      "k": 1.5,
+      "cooldown": 45,
+      "tolerance": 50
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 45,
+      "event_recall": 0.5,
+      "average_delay": -4.333333333333333,
+      "llm_calls": 444,
+      "reduction_percent": 96.71111111111111
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-L/14@336px",
+      "frame_skip": 3,
+      "alpha": 0.7,
+      "window_size": 60,
+      "k": 1.5,
+      "cooldown": 45,
+      "tolerance": 90
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 79,
+      "event_recall": 0.8777777777777778,
+      "average_delay": -3.9367088607594938,
+      "llm_calls": 663,
+      "reduction_percent": 97.05333333333334
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-L/14@336px",
+      "frame_skip": 1,
+      "alpha": 0.7,
+      "window_size": 90,
+      "k": 2,
+      "cooldown": 45,
+      "tolerance": 90
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 89,
+      "event_recall": 0.9888888888888889,
+      "average_delay": 1.3146067415730338,
+      "llm_calls": 841,
+      "reduction_percent": 98.75407407407407
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 3,
+      "alpha": 0.7,
+      "window_size": 60,
+      "k": 1.5,
+      "cooldown": 45,
+      "tolerance": 90
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 81,
+      "event_recall": 0.9,
+      "average_delay": -6.246913580246914,
+      "llm_calls": 590,
+      "reduction_percent": 97.37777777777778
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 3,
+      "alpha": 0.7,
+      "window_size": 90,
+      "k": 1.5,
+      "cooldown": 45,
+      "tolerance": 90
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 77,
+      "event_recall": 0.8555555555555555,
+      "average_delay": -3.2337662337662336,
+      "llm_calls": 537,
+      "reduction_percent": 97.61333333333333
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.7,
+      "window_size": 60,
+      "k": 1.5,
+      "cooldown": 45,
+      "tolerance": 35
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 56,
+      "event_recall": 0.6222222222222222,
+      "average_delay": 0.9464285714285714,
+      "llm_calls": 704,
+      "reduction_percent": 97.91407407407408
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.9,
+      "window_size": 60,
+      "k": 2.0,
+      "cooldown": 45,
+      "tolerance": 35
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 41,
+      "event_recall": 0.45555555555555555,
+      "average_delay": 1.4878048780487805,
+      "llm_calls": 498,
+      "reduction_percent": 98.52444444444444
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.3,
+      "window_size": 60,
+      "k": 2.0,
+      "cooldown": 45,
+      "tolerance": 35
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 46,
+      "event_recall": 0.5111111111111111,
+      "average_delay": 0.1956521739130435,
+      "llm_calls": 549,
+      "reduction_percent": 98.37333333333333
+    }
+  }
+]
