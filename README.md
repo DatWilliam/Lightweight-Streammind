@@ -9,5 +9,10 @@
 - Improve CLIP performance
 - LLM-Integration with Llama
 
+- Adaptive EMA verstehen
+- LLM Anbindung
+- Fixed Query
+- Frames an LLM
+
 ## Acknowledgments
 This project is based on [StreamMind](https://github.com/xinding-sys/StreamMind)

@@ -1,3 +1,4 @@
+pillow
 torchvision
 opencv-python
 numpy
