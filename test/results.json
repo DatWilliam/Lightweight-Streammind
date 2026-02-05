@@ -178,5 +178,245 @@
       "llm_calls": 549,
       "reduction_percent": 98.37333333333333
     }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.3,
+      "window_size": 60,
+      "k": 4,
+      "cooldown": 45,
+      "tolerance": 35
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 17,
+      "event_recall": 0.18888888888888888,
+      "average_delay": 8.823529411764707,
+      "llm_calls": 195,
+      "reduction_percent": 99.42222222222222
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.5,
+      "window_size": 60,
+      "k": 3,
+      "cooldown": 45,
+      "tolerance": 35
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 30,
+      "event_recall": 0.3333333333333333,
+      "average_delay": 4.6,
+      "llm_calls": 349,
+      "reduction_percent": 98.96592592592593
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.6,
+      "window_size": 60,
+      "k": 3,
+      "cooldown": 45,
+      "tolerance": 35
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 33,
+      "event_recall": 0.36666666666666664,
+      "average_delay": 6.575757575757576,
+      "llm_calls": 350,
+      "reduction_percent": 98.96296296296296
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.7,
+      "window_size": 60,
+      "k": 3,
+      "cooldown": 45,
+      "tolerance": 35
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 34,
+      "event_recall": 0.37777777777777777,
+      "average_delay": 6.735294117647059,
+      "llm_calls": 336,
+      "reduction_percent": 99.00444444444445
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.8,
+      "window_size": 35,
+      "k": 3,
+      "cooldown": 45,
+      "tolerance": 35
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 33,
+      "event_recall": 0.36666666666666664,
+      "average_delay": 4.090909090909091,
+      "llm_calls": 322,
+      "reduction_percent": 99.04592592592593
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.7,
+      "window_size": 60,
+      "k": 2.5,
+      "cooldown": 60,
+      "tolerance": 70
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 64,
+      "event_recall": 0.7111111111111111,
+      "average_delay": -3.875,
+      "llm_calls": 403,
+      "reduction_percent": 98.80592592592593
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.7,
+      "window_size": 50,
+      "k": 3.0,
+      "cooldown": 60,
+      "tolerance": 70
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 59,
+      "event_recall": 0.6555555555555556,
+      "average_delay": -0.6440677966101694,
+      "llm_calls": 328,
+      "reduction_percent": 99.02814814814815
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.7,
+      "window_size": 50,
+      "k": 3.3,
+      "cooldown": 60,
+      "tolerance": 70
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 55,
+      "event_recall": 0.6111111111111112,
+      "average_delay": 1.9090909090909092,
+      "llm_calls": 282,
+      "reduction_percent": 99.16444444444444
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.7,
+      "window_size": 50,
+      "k": 2.8,
+      "cooldown": 60,
+      "tolerance": 70
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 60,
+      "event_recall": 0.6666666666666666,
+      "average_delay": 0.0,
+      "llm_calls": 363,
+      "reduction_percent": 98.92444444444445
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.7,
+      "window_size": 50,
+      "k": 1.5,
+      "cooldown": 60,
+      "tolerance": 70
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 82,
+      "event_recall": 0.9111111111111111,
+      "average_delay": -5.7073170731707314,
+      "llm_calls": 637,
+      "reduction_percent": 98.11259259259259
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.7,
+      "window_size": 50,
+      "k": 2.5,
+      "cooldown": 70,
+      "tolerance": 70
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 68,
+      "event_recall": 0.7555555555555555,
+      "average_delay": -3.514705882352941,
+      "llm_calls": 408,
+      "reduction_percent": 98.7911111111111
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.7,
+      "window_size": 50,
+      "k": 2.4,
+      "cooldown": 70,
+      "tolerance": 70
+    },
+    "metrics": {
+      "total_gt_events": 90,
+      "detected_events": 68,
+      "event_recall": 0.7555555555555555,
+      "average_delay": -3.7205882352941178,
+      "llm_calls": 427,
+      "reduction_percent": 98.73481481481483
+    }
   }
 ]
