@@ -2,15 +2,14 @@ import collections
 import numpy as np
 
 class EventGate:
-    def __init__(
-        self,
-        window_size=60,   # amount of frames used for context
-        k=1.5,            # sensitivity
-        cooldown=45       # between two events
+    def __init__(self,
+        window_size=60,
+        k=1.5,
+        cooldown=45
     ):
-        self.window_size = window_size
-        self.k = k
-        self.cooldown = cooldown
+        self.window_size = window_size  # amount of frames used for context
+        self.k = k                      # sensitivity
+        self.cooldown = cooldown        # between two events
 
         self.history = collections.deque(maxlen=window_size) # sliding window buffer
         self.last_event_frame = -cooldown
