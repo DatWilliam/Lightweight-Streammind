@@ -1,18 +1,14 @@
 # A lightweight version of StreamMind for my Bachelor-Thesis
 
-## TODO:
-- EPFE:
-  - EMA vs. SSM / Mamba (GRU??)
-- Cognition Gate:
-  - Learned Binary Classifier
-- Train With Data
-- Improve CLIP performance
-- LLM-Integration with Llama
+This sub-version uses:
+- CLIP
+- EMA
+- Adaptive Threshold
 
-- Adaptive EMA verstehen
-- LLM Anbindung
-- Fixed Query
-- Frames an LLM
+Problem:
+as visible in the results-file, this version fails to accurately detect events 
+but instead the combination of llm calls and the detected events suggests that these events
+were random hits
 
 ## Acknowledgments
 This project is based on [StreamMind](https://github.com/xinding-sys/StreamMind)
