@@ -6,11 +6,9 @@ FPS = 25
 
 DATA_DIR = Path(__file__).resolve().parent
 
-INPUT_PATH = DATA_DIR / "soccernet" / "england_epl" / "2014-2015" / \
-    "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley" / "Labels-v2.json"
+INPUT_PATH = "./soccernet/england_epl/2014-2015/[test]2015-05-17 - 18-00 Manchester United 1 - 1 Arsenal/Labels-v2.json"
 
-OUTPUT_PATH = DATA_DIR / "soccernet" / "england_epl" / "2014-2015" / \
-    "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley" / "Labels.json"
+OUTPUT_PATH = "./soccernet/england_epl/2014-2015/[test]2015-05-17 - 18-00 Manchester United 1 - 1 Arsenal/Labels.json"
 
 
 def game_time_to_frame(game_time: str) -> int:

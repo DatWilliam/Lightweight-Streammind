@@ -248,7 +248,6 @@ fig, ax = plt.subplots(figsize=(15, 6))
 
 # Plot Event Score
 ax.plot(frame_indices, event_scores, label='Event Score', color='blue', linewidth=1)
-ax.axhline(y=PARAMS["k"], color='red', linestyle='--', label=f'Threshold (k={PARAMS["k"]})', linewidth=2)
 
 # Mark ground truth events
 for gt_frame in gt_events:
