@@ -30,11 +30,11 @@ PARAMS = {
     "video_name": "2015-02-21 - 18-00 Chelsea 1 - 1 Burnley : 1st half",
     "model": "ViT-B/32",
     "frame_skip": 2,
-    "alpha": 0.3,
+    "alpha": 0.7,
     "window_size": 60,
-    "k": 2.0,
-    "cooldown": 45,
-    "tolerance": 35
+    "k": 2.5,
+    "cooldown": 70,
+    "tolerance": 70
 }
 
 # Return arr with all 'ground truth' event frames
