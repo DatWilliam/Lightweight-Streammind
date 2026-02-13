@@ -6,3 +6,5 @@ data/soccernet/*
 __pycache__/
 *.pyc
 data/download_soccernet.py
+*.png
+results.json
