@@ -3,19 +3,16 @@ from PIL import Image
 import cv2
 import torch
 import numpy as np
+from config import cfg
 
-class Perception:
-    def __init__(self, alpha=0.7):
+class EPFE:
+    def __init__(self):
         self.state = None
-        self.alpha = alpha
+        self.alpha = cfg.alpha
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        self.model, self.preprocess = clip.load(
-            #"ViT-L/14@336px", # same version as streammind
-            "ViT-B/32",
-            device=self.device
-        )
+        self.model, self.preprocess = clip.load(cfg.clip_model, device=self.device)
         self.model.eval()
 
         for param in self.model.parameters(): # freeze
@@ -34,18 +31,16 @@ class Perception:
 
         if self.state is None:
             self.state = feature
-            return {"event_score": 0.0} # no comparison
+            return {"event_score": 0.0}
 
-        # ema
-        new_state = self.alpha * self.state + (1 - self.alpha) * feature
+        delta = feature -self.state
+        event_score = np.linalg.norm(delta)
 
-        # Event score = semantic change
-        event_score = np.linalg.norm(new_state - self.state)
-
-        self.state = new_state
+        self.state = self.alpha * self.state + (1 - self.alpha) * feature
 
         return {
             "event_score": float(event_score),
+            "delta": delta,
             "state_norm": float(np.linalg.norm(self.state))
         }
 
