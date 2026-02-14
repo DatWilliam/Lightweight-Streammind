@@ -2,7 +2,6 @@ import json
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from model.epfe import EPFE
-from model.gate import EventGate
 from config import cfg
 from data.prepare_epickitchen import load_video_labels, load_video, get_frame_count
 
@@ -26,9 +25,11 @@ def save_results(params, metrics, filename="results.json"):
 video_id = "P01_106"
 
 perception = EPFE()
-gate = EventGate()
+perception.load_checkpoint("checkpoints/best.pt")
+perception.eval()
 
 frame_idx = 0
+last_event_frame = -cfg.cooldown
 
 make_plot = False
 
@@ -47,14 +48,18 @@ for i, frame in enumerate(tqdm(load_video(video_id), total=get_frame_count(video
     if i % cfg.frame_skip != 0:
         continue
 
-    features = perception.process_frame(frame)
+    result = perception.process_frame(frame)
 
     # Store data for plotting
     frame_indices.append(frame_idx)
-    event_scores.append(features["event_score"])
+    event_scores.append(result["event_score"])
 
-    if gate.check_event(features, frame_idx):
+    if (
+        result["event_score"] > cfg.event_threshold
+        and frame_idx - last_event_frame >= cfg.cooldown
+    ):
         trigger_frames.append(frame_idx)
+        last_event_frame = frame_idx
 
 # Check for matches: adaptive tolerance + 1-to-1 matching
 used_triggers = set()
@@ -75,13 +80,13 @@ for gt in gt_events:
 
 PARAMS = {
     "video_name": video_id,
-    "model": cfg.clip_model,
+    "model": f"CLIP({cfg.clip_model}) + Mamba(layers={cfg.n_mamba_layers})",
     "frame_skip": cfg.frame_skip,
-    "alpha": cfg.alpha,
-    "window_size": cfg.window_size,
-    "k": cfg.k,
+    "d_model": cfg.d_model,
+    "n_mamba_layers": cfg.n_mamba_layers,
+    "d_state": cfg.d_state,
+    "event_threshold": cfg.event_threshold,
     "cooldown": cfg.cooldown,
-    "confirm_frames": cfg.confirm_frames
 }
 
 # Metrics
@@ -89,7 +94,7 @@ event_recall = len(gt_matched) / len(gt_events)
 avg_delay = sum(delays) / len(delays) if delays else float("inf")
 llm_calls = len(trigger_frames)
 total_frames = frame_idx // cfg.frame_skip
-event_rate = len(gt_matched) / len(trigger_frames)
+event_rate = len(gt_matched) / len(trigger_frames) if trigger_frames else 0.0
 
 metrics = {
     "#_llm_calls": llm_calls,
@@ -104,7 +109,7 @@ metrics = {
 
 # Save results
 save_results(PARAMS, metrics)
-print("\n✓ Results saved to results.json")
+print("\nResults saved to results.json")
 
 # === PLOT GENERATION ===
 if make_plot:
@@ -112,6 +117,9 @@ if make_plot:
 
     # Plot Event Score
     ax.plot(frame_indices, event_scores, label='Event Score', color='blue', linewidth=1)
+
+    # Threshold line
+    ax.axhline(y=cfg.event_threshold, color='orange', linestyle='--', alpha=0.7, label='Threshold')
 
     # Mark ground truth events
     for gt_frame in gt_events:
@@ -130,12 +138,11 @@ if make_plot:
 
     ax.set_xlabel('Frame Index', fontsize=12)
     ax.set_ylabel('Event Score', fontsize=12)
-    ax.set_title('Event Detection Analysis', fontsize=14, fontweight='bold')
+    ax.set_title('Event Detection Analysis (CLIP + Mamba)', fontsize=14, fontweight='bold')
     ax.legend(loc='upper right')
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.savefig('event_score_analysis.png', dpi=300, bbox_inches='tight')
-    print("\n✓ Plot saved to event_score_analysis.png")
+    print("\nPlot saved to event_score_analysis.png")
     plt.show()
-

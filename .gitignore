@@ -7,4 +7,6 @@ data/epickitchen/*
 __pycache__/
 *.pyc
 data/download_soccernet.py
-*.png
+*.pngth
+checkpoints/
+data/features/
