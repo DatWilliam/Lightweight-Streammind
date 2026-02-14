@@ -5,16 +5,18 @@ from config import cfg
 class EventGate:
     def __init__(self):
         self.window_size = cfg.window_size
-        self.k = cfg.k
         self.cooldown = cfg.cooldown
         self.confirm_frames = cfg.confirm_frames
-
         self.history = collections.deque(maxlen=self.window_size) # sliding window buffer
         self.last_event_frame = -self.cooldown
 
-        # two-stage confirmation state
-        self.candidate_frame = None  # frame where stage 1 triggered
-        self.confirm_count = 0       # consecutive frames above mean after candidate
+        self.k_base = cfg.k
+        self.k_min = cfg.k_min
+        self.k_max = cfg.k_max
+
+        # two-stage confirmation
+        self.candidate_frame = None
+        self.confirm_count = 0 # consecutive frames
 
     def check_event(self, features, frame_idx):
         score = features["event_score"]
@@ -26,9 +28,13 @@ class EventGate:
 
         mean = np.mean(self.history)
         std = np.std(self.history) + 1e-6
-        threshold = mean + self.k * std
 
-        # stage 2: confirm candidate by checking sustained elevation
+        # adaptive k: scale k with coefficient of variation (CV)
+        cv = std / (mean + 1e-6)
+        k_adapted = np.clip(self.k_base * cv / 0.4, self.k_min, self.k_max)
+        threshold = mean + k_adapted * std
+
+        # stage 2: confirm event by checking sustained event-score
         if self.candidate_frame is not None:
             if score > mean:
                 self.confirm_count += 1

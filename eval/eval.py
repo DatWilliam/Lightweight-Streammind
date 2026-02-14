@@ -23,88 +23,90 @@ def save_results(params, metrics, filename="results.json"):
     with open(filename, "w") as f:
         json.dump(results, f, indent=2)
 
-video_id = "P01_106"
-
-perception = EPFE()
-gate = EventGate()
-
-frame_idx = 0
+video_ids = ["P01_102", "P01_103", "P01_104", "P01_106"]
 
 make_plot = False
 
-gt_events = load_video_labels(video_id)
-gt_matched = set()  # allows no duplicates
+for video_id in video_ids:
+    # new — reset models between videos so state doesn't carry over
+    perception = EPFE()
+    gate = EventGate()
 
-trigger_frames = []  # event frames
-delays = []  # to see avg delay
+    frame_idx = 0
+    gt_events = load_video_labels(video_id)
+    gt_matched = set()  # allows no duplicates
 
-# Store data for plotting
-frame_indices = []
-event_scores = []
-
-for i, frame in enumerate(tqdm(load_video(video_id), total=get_frame_count(video_id))):
-    frame_idx += 1
-    if i % cfg.frame_skip != 0:
-        continue
-
-    features = perception.process_frame(frame)
+    trigger_frames = []  # event frames
+    delays = []  # to see avg delay
 
     # Store data for plotting
-    frame_indices.append(frame_idx)
-    event_scores.append(features["event_score"])
+    frame_indices = []
+    event_scores = []
 
-    if gate.check_event(features, frame_idx):
-        trigger_frames.append(frame_idx)
+    for i, frame in enumerate(tqdm(load_video(video_id), total=get_frame_count(video_id))):
+        frame_idx += 1
+        if i % cfg.frame_skip != 0:
+            continue
 
-# Check for matches: adaptive tolerance + 1-to-1 matching
-used_triggers = set()
-for gt in gt_events:
-    duration = gt["stop_frame"] - gt["start_frame"]
-    tolerance = min(duration * cfg.tolerance_fraction, cfg.max_tolerance)
+        features = perception.process_frame(frame)
 
-    matches = []
-    for t in trigger_frames:
-        if t not in used_triggers and abs(t - gt["start_frame"]) <= tolerance:
-            matches.append(t)
+        # Store data for plotting
+        frame_indices.append(frame_idx)
+        event_scores.append(features["event_score"])
 
-    if matches:
-        closest = min(matches, key=lambda x: abs(x - gt["start_frame"]))
-        used_triggers.add(closest)
-        gt_matched.add(gt["start_frame"])
-        delays.append(closest - gt["start_frame"])
+        if gate.check_event(features, frame_idx):
+            trigger_frames.append(frame_idx)
 
-PARAMS = {
-    "video_name": video_id,
-    "model": cfg.clip_model,
-    "frame_skip": cfg.frame_skip,
-    "alpha": cfg.alpha,
-    "window_size": cfg.window_size,
-    "k": cfg.k,
-    "cooldown": cfg.cooldown,
-    "confirm_frames": cfg.confirm_frames
-}
+    # Check for matches: adaptive tolerance + 1-to-1 matching
+    used_triggers = set()
+    for gt in gt_events:
+        duration = gt["stop_frame"] - gt["start_frame"]
+        tolerance = min(duration * cfg.tolerance_fraction, cfg.max_tolerance)
 
-# Metrics
-event_recall = len(gt_matched) / len(gt_events)
-avg_delay = sum(delays) / len(delays) if delays else float("inf")
-llm_calls = len(trigger_frames)
-total_frames = frame_idx // cfg.frame_skip
-event_rate = len(gt_matched) / len(trigger_frames)
+        matches = []
+        for t in trigger_frames:
+            if t not in used_triggers and abs(t - gt["start_frame"]) <= tolerance:
+                matches.append(t)
 
-metrics = {
-    "#_llm_calls": llm_calls,
-    "#_detected_events": len(gt_matched),
-    "total_gt_events": len(gt_events),
-    "event_recall_%": round(event_recall*100, 1),
-    "event_rate_%": round(event_rate*100, 1),
-    "average_delay": round(avg_delay,1),
-    "reduction_%": round((1 - llm_calls / total_frames) * 100, 1),
-    "note": ""
-}
+        if matches:
+            closest = min(matches, key=lambda x: abs(x - gt["start_frame"]))
+            used_triggers.add(closest)
+            gt_matched.add(gt["start_frame"])
+            delays.append(closest - gt["start_frame"])
 
-# Save results
-save_results(PARAMS, metrics)
-print("\n✓ Results saved to results.json")
+    PARAMS = {
+        "video_name": video_id,
+        "model": cfg.clip_model,
+        "frame_skip": cfg.frame_skip,
+        "alpha": cfg.alpha,
+        "window_size": cfg.window_size,
+        "k": cfg.k,
+        "cooldown": cfg.cooldown,
+        "confirm_frames": cfg.confirm_frames
+    }
+
+    # Metrics
+    event_recall = len(gt_matched) / len(gt_events)
+    avg_delay = sum(delays) / len(delays) if delays else float("inf")
+    llm_calls = len(trigger_frames)
+    total_frames = frame_idx // cfg.frame_skip
+    event_precision = len(gt_matched) / len(trigger_frames)
+    f1_score = 2*((event_recall*event_precision) / (event_recall+event_precision))
+
+    metrics = {
+        "F1_SCORE": round(f1_score,3),
+        "TOTAL_llm_calls": llm_calls,
+        "TOTAL_detected_events": len(gt_matched),
+        "TOTAL_gt_events": len(gt_events),
+        "recall_percent": round(event_recall*100, 1),
+        "precision_percent": round(event_precision*100, 1),
+        "average_delay": round(avg_delay,1),
+        "note": "confirm frames 3 -> 4"
+    }
+
+    # Save results
+    save_results(PARAMS, metrics)
+    print("\n✓ Results saved to results.json")
 
 # === PLOT GENERATION ===
 if make_plot:
