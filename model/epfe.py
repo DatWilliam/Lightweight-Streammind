@@ -36,7 +36,7 @@ class EPFE:
         delta = feature -self.state
         event_score = np.linalg.norm(delta)
 
-        self.state = self.alpha * self.state + (1 - self.alpha) * feature
+        self.state = self.alpha * self.state + (1 - self.alpha) * feature # EMA
 
         return {
             "event_score": float(event_score),

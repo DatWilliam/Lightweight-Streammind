@@ -1,5 +1,6 @@
 *.mp4
 data/soccernet/*
+data/epickitchen/*
 *.mkv
 .idea/
 .venv/
@@ -7,5 +8,3 @@ __pycache__/
 *.pyc
 data/download_soccernet.py
 *.png
-*.csv
-results.json

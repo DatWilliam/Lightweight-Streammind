@@ -1,0 +1,112 @@
+[
+  {
+    "parameters": {
+      "video_name": "P01_106",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.85,
+      "window_size": 150,
+      "k": 2.2,
+      "cooldown": 40,
+      "confirm_frames": 3
+    },
+    "metrics": {
+      "#_llm_calls": 193,
+      "#_detected_events": 92,
+      "total_gt_events": 247,
+      "event_recall_%": 37.2,
+      "event_rate_%": 47.7,
+      "average_delay": -2.5,
+      "reduction_%": 98.9,
+      "note": ""
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "P01_106",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.85,
+      "window_size": 150,
+      "k": 2.2,
+      "cooldown": 40,
+      "confirm_frames": 4
+    },
+    "metrics": {
+      "#_llm_calls": 166,
+      "#_detected_events": 83,
+      "total_gt_events": 247,
+      "event_recall_%": 33.6,
+      "event_rate_%": 50.0,
+      "average_delay": -2.8,
+      "reduction_%": 99.1,
+      "note": ""
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "P01_106",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.85,
+      "window_size": 150,
+      "k": 2.0,
+      "cooldown": 40,
+      "confirm_frames": 3
+    },
+    "metrics": {
+      "#_llm_calls": 228,
+      "#_detected_events": 102,
+      "total_gt_events": 247,
+      "event_recall_%": 41.3,
+      "event_rate_%": 44.7,
+      "average_delay": -1.4,
+      "reduction_%": 98.7,
+      "note": ""
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "P01_106",
+      "model": "ViT-B/32",
+      "frame_skip": 2,
+      "alpha": 0.7,
+      "window_size": 150,
+      "k": 2.0,
+      "cooldown": 40,
+      "confirm_frames": 3
+    },
+    "metrics": {
+      "#_llm_calls": 222,
+      "#_detected_events": 94,
+      "total_gt_events": 247,
+      "event_recall_%": 38.1,
+      "event_rate_%": 42.3,
+      "average_delay": -0.9,
+      "reduction_%": 98.8,
+      "note": ""
+    }
+  },
+  {
+    "parameters": {
+      "video_name": "P01_106",
+      "model": "ViT-L/14@336px",
+      "frame_skip": 1,
+      "alpha": 0.85,
+      "window_size": 150,
+      "k": 2.0,
+      "cooldown": 40,
+      "confirm_frames": 3
+    },
+    "metrics": {
+      "#_llm_calls": 318,
+      "#_detected_events": 116,
+      "total_gt_events": 247,
+      "event_recall_%": 47.0,
+      "event_rate_%": 36.5,
+      "average_delay": 1.7,
+      "reduction_%": 99.1,
+      "note": ""
+    }
+  }
+]
