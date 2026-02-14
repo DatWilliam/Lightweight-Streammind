@@ -26,6 +26,15 @@ Reason: CLIP is used by StreamMind and more accurate
 Change: Fixed Threshold -> Adaptive Threshold <br>
 Reason: To include temporal features
 
+Change: Swap to Epic Kitchen
+Reason: No semantic understanding needed
+
+Change: Swap to two Stage confirmation
+Reason: Less FP
+
+Change: Fixed sensitivity (k) to adaptive sens
+Reason: reduce overfitting
+
 
 
 ## Acknowledgments
