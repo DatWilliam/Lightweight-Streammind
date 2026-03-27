@@ -7,7 +7,9 @@ from model.epfe import EPFE
 from model.gate import EventGate
 from utils.eval_func import calculate_timval, calculate_triggeracc
 
-def run_eval(dataset: str, split: str, frame_skip: int = 10):
+BATCH_SIZE = 64
+
+def run_eval(dataset: str, split: str):
 
     config = load_config(dataset) # load config for dataset
     video_ids = getattr(config, f"video_ids_{split}")
@@ -25,13 +27,23 @@ def run_eval(dataset: str, split: str, frame_skip: int = 10):
         epfe = EPFE(config)
         gt_events = load_video_labels(video_id)
         trigger_frames = [] # for current video
+        batch_frames = []
+        batch_indices = []
 
         for frame_idx, frame in enumerate(tqdm(load_video(video_id), total=get_frame_count([video_id]), desc=video_id), start=1):
-            if frame_idx % frame_skip != 0:
-                continue
-            feat = epfe.process_frame(frame)
-            if gate.check_event(feat, frame_idx):
-                trigger_frames.append(frame_idx)
+            batch_frames.append(frame)
+            batch_indices.append(frame_idx)
+
+            if len(batch_frames) == BATCH_SIZE:
+                for idx, feat in zip(batch_indices, epfe.process_batch(batch_frames)):
+                    if gate.check_event(feat, idx):
+                        trigger_frames.append(idx)
+                batch_frames, batch_indices = [], []
+
+        if batch_frames:
+            for idx, feat in zip(batch_indices, epfe.process_batch(batch_frames)):
+                if gate.check_event(feat, idx):
+                    trigger_frames.append(idx)
 
 
         used_triggers = set()

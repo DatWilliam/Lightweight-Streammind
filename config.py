@@ -7,6 +7,7 @@ class BaseConfig:
     DATA_DIR = ROOT_DIR / "data"
     clip_model: str = "ViT-B/32" # CLIP: ViT-L/14@336px
     window_size: int = 30  # context frames
+    mamba_buffer_size: int = 16  # sliding window context for Mamba
 
 class SoccerNetConfig(BaseConfig):
     fps: int = 25
@@ -18,8 +19,8 @@ class SoccerNetConfig(BaseConfig):
     fixed_threshold: float = 0.2
     tolerance: int = 5  # seconds
     alpha: float = 0.26
-    video_ids_train = ["1_224p.mkv", "2_224p.mkv"]
-    video_ids_test = ["3_224p.mkv", "4_224p.mkv", "5_224p.mkv", "6_224p.mkv", "7_224p.mkv", "8_224p.mkv", "9_224p.mkv", "10_224p.mkv", "11_224p.mkv", "12_224p.mkv", "13_224p.mkv", "14_224p.mkv"]
+    video_ids_train = ["3_224p.mkv", "4_224p.mkv", "5_224p.mkv", "6_224p.mkv", "7_224p.mkv", "8_224p.mkv", "9_224p.mkv", "10_224p.mkv", "11_224p.mkv", "12_224p.mkv", "13_224p.mkv", "14_224p.mkv"]
+    video_ids_test = ["1_224p.mkv", "2_224p.mkv"]
 
 class EpicKitchenConfig(BaseConfig):
     fps: int = 50
