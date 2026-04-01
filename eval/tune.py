@@ -6,7 +6,6 @@ from pathlib import Path
 from config import load_config
 from model.epfe_cached import EPFECached
 from model.gate import EventGate
-from utils.build_cache import clip_model_suffix
 
 
 def _precompute_scores(config, dataset: str, video_ids: list, weights: str, use_mamba: bool) -> dict:
@@ -20,11 +19,10 @@ def _precompute_scores(config, dataset: str, video_ids: list, weights: str, use_
     if weights:
         epfe.load_weights(weights)
 
-    suffix = clip_model_suffix(config.clip_model)
     video_scores = {}
 
     for video_id in video_ids:
-        cache_path = config.DATA_DIR / dataset / str(Path(video_id).with_suffix(f".{suffix}.npz"))
+        cache_path = config.DATA_DIR / dataset / str(Path(video_id).with_suffix(".npz"))
         if not cache_path.exists():
             raise FileNotFoundError(
                 f"Cache nicht gefunden: {cache_path}\n"
