@@ -1,10 +1,20 @@
 import clip
 import torch
 import torch.nn as nn
-import numpy as np
 import cv2
 from PIL import Image
-from mamba_minimal import ResidualBlock, RMSNorm, ModelArgs
+from mamba_ssm import Mamba
+
+
+class MambaLayer(nn.Module):
+    """Pre-Norm Mamba-Block mit Residual-Verbindung."""
+    def __init__(self, d_model: int):
+        super().__init__()
+        self.norm = nn.LayerNorm(d_model)
+        self.mamba = Mamba(d_model=d_model, d_state=16, d_conv=4, expand=2)
+
+    def forward(self, x):
+        return self.mamba(self.norm(x)) + x
 
 
 class EPFE(nn.Module):
@@ -19,9 +29,8 @@ class EPFE(nn.Module):
             param.requires_grad = False
 
         # ── Mamba EPFE (trainierbar) ────────────────────────────────────
-        feature_dim = 512  # ViT-B/32; ViT-L/14 → 768
-        mamba_args = ModelArgs(d_model=feature_dim, n_layer=1)
-        self.mamba = nn.Sequential(ResidualBlock(mamba_args), RMSNorm(feature_dim))
+        feature_dim = 768 if "ViT-L" in cfg.clip_model else 512
+        self.mamba = nn.Sequential(MambaLayer(feature_dim), nn.LayerNorm(feature_dim))
 
         # ── Score Head (trainierbar) ────────────────────────────────────
         # Lernt aus dem Perception Token einen event_score vorherzusagen

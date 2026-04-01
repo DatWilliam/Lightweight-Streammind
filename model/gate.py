@@ -15,7 +15,8 @@ class EventGate:
 
         # two-stage confirmation
         self.candidate_frame = None
-        self.confirm_count = 0 # consecutive frames
+        self.confirm_count = 0  # consecutive frames
+        self.mean_at_spike = 0.0  # mean zum Zeitpunkt des Spikes (fix verschiebendes mean)
 
     def check_event(self, features, frame_idx):
         score = features["event_score"]
@@ -36,13 +37,14 @@ class EventGate:
 
         # stage 2: confirm event by checking sustained event-score
         if self.candidate_frame is not None:
-            if score > mean:
+            if score > self.mean_at_spike:  # mean zum Spike-Zeitpunkt, nicht gleitend
                 self.confirm_count += 1
                 if self.confirm_count >= self.confirm_frames:
                     self.last_event_frame = self.candidate_frame
+                    trigger_frame = self.candidate_frame  # Spike-Frame melden, nicht Confirmation-Frame
                     self.candidate_frame = None
                     self.confirm_count = 0
-                    return True
+                    return trigger_frame
             else:
                 # score dropped below mean, reject candidate
                 self.candidate_frame = None
@@ -55,6 +57,7 @@ class EventGate:
             and frame_idx - self.last_event_frame >= self.cooldown
         ):
             self.candidate_frame = frame_idx
+            self.mean_at_spike = mean
             self.confirm_count = 0
 
         return False

@@ -1,19 +1,18 @@
 # python -m eval.eval_cached epickitchen test
 # python -m eval.eval_cached soccernet test
 # python -m eval.eval_cached soccernet test --weights checkpoints/epfe.pt
-import os
 import argparse
 import numpy as np
+from pathlib import Path
 from tqdm import tqdm
 from config import load_config
 from model.epfe_cached import EPFECached
 from model.gate import EventGate
 from utils.eval_func import calculate_timval, calculate_triggeracc
+from utils.build_cache import clip_model_suffix
 
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
 
-
-def run_eval(dataset: str, split: str, weights: str = None):
+def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = True):
     if dataset == "epickitchen":
         from data.prepare_epickitchen import load_video_labels, get_total_gt_events, get_frame_count
     else:
@@ -26,30 +25,32 @@ def run_eval(dataset: str, split: str, weights: str = None):
     found_events = 0
 
     for video_id in video_ids:
-        cache_path = os.path.join(CACHE_DIR, f"{video_id}.npz")
-        if not os.path.exists(cache_path):
+        suffix = clip_model_suffix(config.clip_model)
+        cache_path = config.DATA_DIR / dataset / str(Path(video_id).with_suffix(f".{suffix}.npz"))
+        if not cache_path.exists():
             raise FileNotFoundError(
                 f"Cache nicht gefunden: {cache_path}\n"
                 f"Erst ausführen: python -m utils.build_cache {dataset}"
             )
 
         gate = EventGate(config)
-        epfe = EPFECached(config)
+        epfe = EPFECached(config, use_mamba=use_mamba)
         if weights:
             epfe.load_weights(weights)
 
         gt_events = load_video_labels(video_id)
         trigger_frames = []
 
-        data = np.load(cache_path)
+        data = np.load(str(cache_path))
         for frame_idx, feature in tqdm(
             zip(data["frame_idx"].tolist(), data["features"]),
             total=len(data["frame_idx"]),
             desc=video_id
         ):
             result = epfe.process_frame(feature)
-            if gate.check_event(result, int(frame_idx)):
-                trigger_frames.append(int(frame_idx))
+            triggered = gate.check_event(result, int(frame_idx))
+            if triggered is not False:
+                trigger_frames.append(int(triggered))
 
         used_triggers = set()
         for gt in gt_events:
@@ -86,7 +87,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset", choices=["epickitchen", "soccernet"], default="soccernet", nargs="?")
     parser.add_argument("split", choices=["train", "test"], default="test", nargs="?")
-    parser.add_argument("--weights", default=None, help="Pfad zu trainierten Gewichten (.pt)")
+    parser.add_argument("--weights",  default=None, help="Pfad zu trainierten Gewichten (.pt)")
+    parser.add_argument("--no_mamba", action="store_true", help="Ablation: Mamba weglassen")
     args = parser.parse_args()
-    run_eval(args.dataset, args.split, args.weights)
-# {'F1_SCORE': 0.326, 'recall': 0.424, 'precision': 0.265, 'trigger_acc': 0.125, 'tim_val': 0.0, 'call_red_percent': 99.8}
+    run_eval(args.dataset, args.split, args.weights, use_mamba=not args.no_mamba)

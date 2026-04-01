@@ -1,65 +1,37 @@
-# python -m utils.build_cache epickitchen
-# python -m utils.build_cache soccernet
-import os
-import argparse
+# python -m utils.build_cache
 import numpy as np
 from tqdm import tqdm
+from pathlib import Path
 import clip
 import torch
 from PIL import Image
 import cv2
 from config import load_config
 
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "eval", "cache")
-os.makedirs(CACHE_DIR, exist_ok=True)
-
-BATCH_SIZE = 64
+BATCH_SIZE = 16
 
 
-def build_cache(dataset: str):
-    if dataset == "epickitchen":
-        from data.prepare_epickitchen import load_video, get_frame_count
-    else:
-        from data.prepare_soccernet import load_video, get_frame_count
+def clip_model_suffix(clip_model: str) -> str:
+    """Lesbares Kürzel aus CLIP-Modell-Name, z.B. 'ViT-B/32' → 'vitb32'."""
+    return clip_model.lower().replace("/", "").replace("@", "").replace("-", "").replace(".", "")
 
-    config = load_config(dataset)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model, preprocess = clip.load(config.clip_model, device=device)
-    model.eval()
-    for param in model.parameters():
-        param.requires_grad = False
+def extract_features(video_path: Path, model, preprocess, device) -> tuple:
+    frame_indices, features = [], []
+    batch_frames, batch_indices = [], []
 
-    all_ids = config.video_ids_train + config.video_ids_test
+    cap = cv2.VideoCapture(str(video_path))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
 
-    for video_id in all_ids:
-        cache_path = os.path.join(CACHE_DIR, f"{video_id}.npz")
-        if os.path.exists(cache_path):
-            print(f"Already cached: {video_id}, skipping")
-            continue
+    cap = cv2.VideoCapture(str(video_path))
+    for frame_idx in tqdm(range(1, total + 1), desc=video_path.name):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        batch_frames.append(frame)
+        batch_indices.append(frame_idx)
 
-        frame_indices = []
-        features = []
-        batch_frames = []
-        batch_indices = []
-
-        for frame_idx, frame in enumerate(tqdm(load_video(video_id), total=get_frame_count([video_id]), desc=video_id), start=1):
-            batch_frames.append(frame)
-            batch_indices.append(frame_idx)
-
-            if len(batch_frames) == BATCH_SIZE:
-                images = torch.stack([
-                    preprocess(Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)))
-                    for f in batch_frames
-                ]).to(device)
-                with torch.no_grad():
-                    feats = model.encode_image(images)
-                    feats = feats / feats.norm(dim=-1, keepdim=True)
-                    feats = feats.cpu().numpy().astype(np.float32)
-                frame_indices.extend(batch_indices)
-                features.extend(feats)
-                batch_frames, batch_indices = [], []
-
-        if batch_frames:
+        if len(batch_frames) == BATCH_SIZE:
             images = torch.stack([
                 preprocess(Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)))
                 for f in batch_frames
@@ -70,6 +42,48 @@ def build_cache(dataset: str):
                 feats = feats.cpu().numpy().astype(np.float32)
             frame_indices.extend(batch_indices)
             features.extend(feats)
+            batch_frames, batch_indices = [], []
+    cap.release()
+
+    # letzter Batch
+    if batch_frames:
+        images = torch.stack([
+            preprocess(Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)))
+            for f in batch_frames
+        ]).to(device)
+        with torch.no_grad():
+            feats = model.encode_image(images)
+            feats = feats / feats.norm(dim=-1, keepdim=True)
+            feats = feats.cpu().numpy().astype(np.float32)
+        frame_indices.extend(batch_indices)
+        features.extend(feats)
+
+    return frame_indices, features
+
+
+def build_cache():
+    config = load_config("soccernet")
+    soccernet_dir = config.DATA_DIR / "soccernet"
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load(config.clip_model, device=device)
+    model.eval()
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # alle .mkv dateien rekursiv finden
+    video_files = sorted(soccernet_dir.rglob("*.mkv"))
+    print(f"Gefunden: {len(video_files)} Videos")
+
+    suffix = clip_model_suffix(config.clip_model)
+    for video_path in video_files:
+        cache_path = video_path.with_suffix(f".{suffix}.npz")
+        if cache_path.exists():
+            print(f"Already cached: {video_path.name}, skipping")
+            continue
+
+        print(f"\nVerarbeite: {video_path}")
+        frame_indices, features = extract_features(video_path, model, preprocess, device)
 
         np.savez(cache_path,
                  frame_idx=np.array(frame_indices),
@@ -78,7 +92,4 @@ def build_cache(dataset: str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("dataset", choices=["epickitchen", "soccernet"])
-    args = parser.parse_args()
-    build_cache(args.dataset)
+    build_cache()

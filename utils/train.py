@@ -4,7 +4,7 @@
 import os
 import argparse
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from config import load_config
 from model.epfe_cached import EPFECached
@@ -14,23 +14,27 @@ CHECKPOINT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", 
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 
-def train(dataset: str, epochs: int = 20, lr: float = 1e-3, batch_size: int = 64):
+def focal_loss(logits, targets, gamma: float = 2.0, pos_weight=None):
+    bce = F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight, reduction="none")
+    pt = torch.exp(-bce)
+    return ((1 - pt) ** gamma * bce).mean()
+
+
+def train(dataset: str, epochs: int = 20, lr: float = 1e-3, batch_size: int = 64, gamma: float = 2.0, use_mamba: bool = True):
     config = load_config(dataset)
 
     train_set = EPFEDataset(config, dataset, split="train")
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=0)
 
-    epfe = EPFECached(config)
+    epfe = EPFECached(config, use_mamba=use_mamba)
     epfe.train()
 
-    # Gewichtete BCE gegen Class Imbalance
     pos_weight = torch.tensor([train_set.pos_weight]).to(epfe.device)
-    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
     optimizer = torch.optim.Adam(epfe.parameters(), lr=lr)
 
     best_loss = float("inf")
-    checkpoint_path = os.path.join(CHECKPOINT_DIR, f"epfe_{dataset}.pt")
+    checkpoint_path = os.path.join(CHECKPOINT_DIR, f"epfe_{dataset}{'_nomamba' if not use_mamba else ''}.pt")
 
     for epoch in range(1, epochs + 1):
         total_loss = 0.0
@@ -40,7 +44,7 @@ def train(dataset: str, epochs: int = 20, lr: float = 1e-3, batch_size: int = 64
 
             optimizer.zero_grad()
             scores = epfe.forward_train(features)  # (batch, buffer_size)
-            loss = criterion(scores, labels)
+            loss = focal_loss(scores, labels, gamma=gamma, pos_weight=pos_weight)
             loss.backward()
             optimizer.step()
 
@@ -64,5 +68,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs",     type=int,   default=20)
     parser.add_argument("--lr",         type=float, default=1e-3)
     parser.add_argument("--batch_size", type=int,   default=64)
+    parser.add_argument("--gamma",      type=float, default=2.0)
+    parser.add_argument("--no_mamba",   action="store_true", help="Ablation: Mamba weglassen")
     args = parser.parse_args()
-    train(args.dataset, args.epochs, args.lr, args.batch_size)
+    train(args.dataset, args.epochs, args.lr, args.batch_size, args.gamma, use_mamba=not args.no_mamba)

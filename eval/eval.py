@@ -36,14 +36,16 @@ def run_eval(dataset: str, split: str):
 
             if len(batch_frames) == BATCH_SIZE:
                 for idx, feat in zip(batch_indices, epfe.process_batch(batch_frames)):
-                    if gate.check_event(feat, idx):
-                        trigger_frames.append(idx)
+                    triggered = gate.check_event(feat, idx)
+                    if triggered is not False:
+                        trigger_frames.append(int(triggered))
                 batch_frames, batch_indices = [], []
 
         if batch_frames:
             for idx, feat in zip(batch_indices, epfe.process_batch(batch_frames)):
-                if gate.check_event(feat, idx):
-                    trigger_frames.append(idx)
+                triggered = gate.check_event(feat, idx)
+                if triggered is not False:
+                    trigger_frames.append(int(triggered))
 
 
         used_triggers = set()
