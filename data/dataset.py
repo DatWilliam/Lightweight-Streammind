@@ -2,7 +2,6 @@ import numpy as np
 import torch
 from pathlib import Path
 from torch.utils.data import Dataset
-from utils.build_cache import clip_model_suffix
 
 
 class EPFEDataset(Dataset):
@@ -25,8 +24,7 @@ class EPFEDataset(Dataset):
         video_ids = getattr(cfg, f"video_ids_{split}")
 
         for video_id in video_ids:
-            suffix = clip_model_suffix(cfg.clip_model)
-            cache_path = cfg.DATA_DIR / dataset / str(Path(video_id).with_suffix(f".{suffix}.npz"))
+            cache_path = cfg.DATA_DIR / dataset / str(Path(video_id).with_suffix(".npz"))
             if not cache_path.exists():
                 raise FileNotFoundError(
                     f"Cache nicht gefunden: {cache_path}\n"

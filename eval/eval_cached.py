@@ -9,7 +9,6 @@ from config import load_config
 from model.epfe_cached import EPFECached
 from model.gate import EventGate
 from utils.eval_func import calculate_timval, calculate_triggeracc
-from utils.build_cache import clip_model_suffix
 
 
 def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = True):
@@ -25,8 +24,7 @@ def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = Tr
     found_events = 0
 
     for video_id in video_ids:
-        suffix = clip_model_suffix(config.clip_model)
-        cache_path = config.DATA_DIR / dataset / str(Path(video_id).with_suffix(f".{suffix}.npz"))
+        cache_path = config.DATA_DIR / dataset / str(Path(video_id).with_suffix(".npz"))
         if not cache_path.exists():
             raise FileNotFoundError(
                 f"Cache nicht gefunden: {cache_path}\n"

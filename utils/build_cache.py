@@ -11,10 +11,6 @@ from config import load_config
 BATCH_SIZE = 16
 
 
-def clip_model_suffix(clip_model: str) -> str:
-    """Lesbares Kürzel aus CLIP-Modell-Name, z.B. 'ViT-B/32' → 'vitb32'."""
-    return clip_model.lower().replace("/", "").replace("@", "").replace("-", "").replace(".", "")
-
 def extract_features(video_path: Path, model, preprocess, device) -> tuple:
     frame_indices, features = [], []
     batch_frames, batch_indices = [], []
@@ -75,9 +71,8 @@ def build_cache():
     video_files = sorted(soccernet_dir.rglob("*.mkv"))
     print(f"Gefunden: {len(video_files)} Videos")
 
-    suffix = clip_model_suffix(config.clip_model)
     for video_path in video_files:
-        cache_path = video_path.with_suffix(f".{suffix}.npz")
+        cache_path = video_path.with_suffix(".npz")
         if cache_path.exists():
             print(f"Already cached: {video_path.name}, skipping")
             continue
