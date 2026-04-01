@@ -1,9 +1,8 @@
-import os
 import numpy as np
 import torch
+from pathlib import Path
 from torch.utils.data import Dataset
-
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "eval", "cache")
+from utils.build_cache import clip_model_suffix
 
 
 class EPFEDataset(Dataset):
@@ -14,7 +13,7 @@ class EPFEDataset(Dataset):
     Labels: 1.0 für alle Frames innerhalb von ±event_radius um einen Event-Start, sonst 0.0
     """
 
-    def __init__(self, cfg, dataset: str, split: str, event_radius: int = 8):
+    def __init__(self, cfg, dataset: str, split: str, event_radius: int = 15):
         if dataset == "epickitchen":
             from data.prepare_epickitchen import load_video_labels
         else:
@@ -26,16 +25,16 @@ class EPFEDataset(Dataset):
         video_ids = getattr(cfg, f"video_ids_{split}")
 
         for video_id in video_ids:
-            cache_path = os.path.join(CACHE_DIR, f"{video_id}.npz")
-            if not os.path.exists(cache_path):
+            suffix = clip_model_suffix(cfg.clip_model)
+            cache_path = cfg.DATA_DIR / dataset / str(Path(video_id).with_suffix(f".{suffix}.npz"))
+            if not cache_path.exists():
                 raise FileNotFoundError(
                     f"Cache nicht gefunden: {cache_path}\n"
                     f"Erst ausführen: python -m utils.build_cache {dataset}"
                 )
 
-            data = np.load(cache_path)
-            features = data["features"]       # (F, 512) float32
-            frame_indices = data["frame_idx"] # (F,) int, starts at 1
+            data = np.load(str(cache_path))
+            features = data["features"]  # (F, dim) float32
 
             # Frame-Level Labels
             gt_events = load_video_labels(video_id)
