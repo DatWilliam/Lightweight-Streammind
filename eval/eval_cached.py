@@ -1,55 +1,74 @@
-# python -m eval.eval_cached epickitchen test
-# python -m eval.eval_cached soccernet test
-# python -m eval.eval_cached soccernet test --weights checkpoints/epfe.pt
 import argparse
+import importlib
 import numpy as np
-from pathlib import Path
-from tqdm import tqdm
 from config import load_config
-from model.epfe_cached import EPFECached
-from model.gate import EventGate
 from utils.eval_func import calculate_timval, calculate_triggeracc
 
+# gate_mode -> module name
+GATE_MODULES = {
+    "full":  "model.gate",
+    "th":    "model.gate_th",
+    "fixed": "model.gate_fixed",
+}
 
-def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = True):
-    if dataset == "epickitchen":
-        from data.prepare_epickitchen import load_video_labels, get_total_gt_events, get_frame_count
+# epfe_mode -> (module, class). EMA has no learnable params.
+EPFE_MODULES = {
+    "mamba": ("model.epfe_cached", "EPFECached"),
+    "ema":   ("model.epfe_ema",    "EPFEEMACached"),
+}
+
+
+def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = True,
+             gate_mode: str = "full", epfe_mode: str = "mamba", alpha: float = None):
+    if dataset == "ego4d":
+        from data.prepare_ego4d import load_video_labels, get_total_gt_events, get_frame_count, get_cache_path
     else:
-        from data.prepare_soccernet import load_video_labels, get_total_gt_events, get_frame_count
+        from data.prepare_soccernet import load_video_labels, get_total_gt_events, get_frame_count, get_cache_path
+
+    EventGate = importlib.import_module(GATE_MODULES[gate_mode]).EventGate
+    epfe_module, epfe_class = EPFE_MODULES[epfe_mode]
+    EPFECls = getattr(importlib.import_module(epfe_module), epfe_class)
+    if epfe_mode == "ema":
+        print(f"EPFE: ema (alpha={alpha if alpha is not None else load_config(dataset).alpha}) | Gate: {gate_mode}")
+    else:
+        print(f"EPFE: {epfe_mode} | Gate: {gate_mode}")
 
     config = load_config(dataset)
     video_ids = getattr(config, f"video_ids_{split}")
+    if alpha is not None:
+        config.alpha = alpha
+
+    epfe = EPFECls(config, use_mamba=use_mamba)
+    epfe.eval()
+    if weights:
+        epfe.load_weights(weights)
 
     all_trigger_frames = []
     found_events = 0
 
     for video_id in video_ids:
-        cache_path = config.DATA_DIR / dataset / str(Path(video_id).with_suffix(".npz"))
+        cache_path = get_cache_path(video_id)
         if not cache_path.exists():
             raise FileNotFoundError(
-                f"Cache nicht gefunden: {cache_path}\n"
-                f"Erst ausführen: python -m utils.build_cache {dataset}"
+                f"Cache not found: {cache_path}\n"
+                f"Run first: python -m utils.build_cache {dataset}"
             )
 
-        gate = EventGate(config)
-        epfe = EPFECached(config, use_mamba=use_mamba)
-        if weights:
-            epfe.load_weights(weights)
-
         gt_events = load_video_labels(video_id)
-        trigger_frames = []
-
         data = np.load(str(cache_path))
-        for frame_idx, feature in tqdm(
-            zip(data["frame_idx"].tolist(), data["features"]),
-            total=len(data["frame_idx"]),
-            desc=video_id
-        ):
-            result = epfe.process_frame(feature)
+
+        # bulk EPFE inference, then gate frame-by-frame in numpy
+        scores = epfe.score_video(data["features"])
+
+        gate = EventGate(config)
+        trigger_frames = []
+        for frame_idx, score in zip(data["frame_idx"].tolist(), scores):
+            result = {"event_score": float(score), "perception_token": None}
             triggered = gate.check_event(result, int(frame_idx))
             if triggered is not False:
                 trigger_frames.append(int(triggered))
 
+        # match each GT to nearest unused trigger within tolerance
         used_triggers = set()
         for gt in gt_events:
             matches = [t for t in trigger_frames
@@ -83,9 +102,17 @@ def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = Tr
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("dataset", choices=["epickitchen", "soccernet"], default="soccernet", nargs="?")
-    parser.add_argument("split", choices=["train", "test"], default="test", nargs="?")
-    parser.add_argument("--weights",  default=None, help="Pfad zu trainierten Gewichten (.pt)")
-    parser.add_argument("--no_mamba", action="store_true", help="Ablation: Mamba weglassen")
+    parser.add_argument("dataset", choices=["soccernet", "ego4d"], default="soccernet", nargs="?")
+    parser.add_argument("split", choices=["train", "val", "test"], default="test", nargs="?")
+    parser.add_argument("--weights",  default=None, help="path to trained weights (.pt)")
+    parser.add_argument("--no_mamba", action="store_true", help="ablation: drop Mamba")
+    parser.add_argument("--gate", choices=list(GATE_MODULES.keys()), default="full",
+                        help="gate mode: fixed | th (adaptive) | full (adaptive + confirm)")
+    parser.add_argument("--epfe", choices=list(EPFE_MODULES.keys()), default="mamba",
+                        help="EPFE backbone: mamba (trained) | ema (parameter-free)")
+    parser.add_argument("--alpha", type=float, default=None,
+                        help="EMA decay (overrides config.alpha; only used by --epfe ema)")
     args = parser.parse_args()
-    run_eval(args.dataset, args.split, args.weights, use_mamba=not args.no_mamba)
+    run_eval(args.dataset, args.split, args.weights,
+             use_mamba=not args.no_mamba, gate_mode=args.gate, epfe_mode=args.epfe,
+             alpha=args.alpha)

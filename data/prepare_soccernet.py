@@ -10,20 +10,17 @@ cfg = load_config("soccernet")
 
 def load_video_labels(video_id: str) -> List[Dict]:
     """
-    Laedt Events fuer ein Video aus Labels-v2.json.
-
-    video_id: relativer Pfad ab data/soccernet/, z.B.
-              "england_epl/2015-2016/2016-03-19 - 18-00 Chelsea 2 - 2 West Ham/1_224p.mkv"
-
-    position in der JSON ist in Millisekunden ab Halbzeitbeginn.
+    Load events for one half from Labels-v2.json.
+    video_id: path relative to data/soccernet/ (e.g. "england_epl/.../1_224p.mkv").
+    JSON 'position' is milliseconds since half kickoff.
     """
     video_path = cfg.DATA_DIR / "soccernet" / video_id
     json_path = video_path.parent / "Labels-v2.json"
 
     if not json_path.exists():
-        raise FileNotFoundError(f"Labels-v2.json nicht gefunden: {json_path}")
+        raise FileNotFoundError(f"Labels-v2.json not found: {json_path}")
 
-    # "1_224p.mkv" -> half = "1", "2_224p.mkv" -> half = "2"
+    # "1_224p.mkv" -> half "1", "2_224p.mkv" -> half "2"
     half = video_path.stem.split("_")[0]
 
     with open(json_path, encoding="utf-8") as f:
@@ -46,8 +43,12 @@ def load_video_labels(video_id: str) -> List[Dict]:
     return events
 
 
-def get_event_start_frames(video_id: str) -> List[int]:
-    return [e["start_frame"] for e in load_video_labels(video_id)]
+def get_video_path(video_id: str) -> Path:
+    return cfg.DATA_DIR / "soccernet" / video_id
+
+
+def get_cache_path(video_id: str) -> Path:
+    return get_video_path(video_id).with_suffix(".npz")
 
 
 def get_total_gt_events(video_ids: List[str]) -> int:
@@ -55,24 +56,31 @@ def get_total_gt_events(video_ids: List[str]) -> int:
 
 
 def get_frame_count(video_ids: List[str]) -> int:
+    # read from cache; fall back to video if cache missing
     total = 0
     for video_id in video_ids:
-        video_path = cfg.DATA_DIR / "soccernet" / video_id
-        cap = cv2.VideoCapture(str(video_path))
-        total += int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        cap.release()
+        cache_path = get_cache_path(video_id)
+        if cache_path.exists():
+            with np.load(str(cache_path)) as data:
+                total += len(data["frame_idx"])
+        else:
+            video_path = get_video_path(video_id)
+            cap = cv2.VideoCapture(str(video_path))
+            total += int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.release()
     return total
 
 
 def load_video(video_id: str) -> Generator[np.ndarray, None, None]:
-    video_path = cfg.DATA_DIR / "soccernet" / video_id
+    # used by the live (non-cached) inference path
+    video_path = get_video_path(video_id)
 
     if not video_path.exists():
-        raise FileNotFoundError(f"Video nicht gefunden: {video_path}")
+        raise FileNotFoundError(f"Video not found: {video_path}")
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        raise FileNotFoundError(f"Video konnte nicht geöffnet werden: {video_path}")
+        raise FileNotFoundError(f"Could not open video: {video_path}")
 
     try:
         while True:
