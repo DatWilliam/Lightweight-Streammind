@@ -1,67 +1,157 @@
-# python -m eval.tune soccernet test --weights checkpoints/epfe_soccernet.pt
 import argparse
+import importlib
 import itertools
 import numpy as np
-from pathlib import Path
 from config import load_config
-from model.epfe_cached import EPFECached
-from model.gate import EventGate
+from utils.eval_func import calculate_triggeracc, calculate_timval
+
+EPFE_MODULES = {
+    "mamba": ("model.epfe_cached", "EPFECached"),
+    "ema":   ("model.epfe_ema",    "EPFEEMACached"),
+}
 
 
-def _precompute_scores(config, dataset: str, video_ids: list, weights: str, use_mamba: bool) -> dict:
-    """Lädt CLIP-Cache und berechnet Event-Scores einmalig für alle Videos."""
-    if dataset == "epickitchen":
-        from data.prepare_epickitchen import load_video_labels
+def _precompute_scores(config, dataset: str, video_ids: list, weights: str,
+                        use_mamba: bool, epfe_mode: str = "mamba") -> dict:
+    # load EPFE once, run bulk inference per video
+    if dataset == "ego4d":
+        from data.prepare_ego4d import load_video_labels, get_cache_path
     else:
-        from data.prepare_soccernet import load_video_labels
+        from data.prepare_soccernet import load_video_labels, get_cache_path
 
-    epfe = EPFECached(config, use_mamba=use_mamba)
+    epfe_module, epfe_class = EPFE_MODULES[epfe_mode]
+    EPFECls = getattr(importlib.import_module(epfe_module), epfe_class)
+    epfe = EPFECls(config, use_mamba=use_mamba)
+    epfe.eval()
     if weights:
         epfe.load_weights(weights)
 
     video_scores = {}
-
     for video_id in video_ids:
-        cache_path = config.DATA_DIR / dataset / str(Path(video_id).with_suffix(".npz"))
+        cache_path = get_cache_path(video_id)
         if not cache_path.exists():
             raise FileNotFoundError(
-                f"Cache nicht gefunden: {cache_path}\n"
-                f"Erst ausführen: python -m utils.build_cache {dataset}"
+                f"Cache not found: {cache_path}\n"
+                f"Run first: python -m utils.build_cache {dataset}"
             )
-
-        epfe.reset()
         data = np.load(str(cache_path))
-        scores = []
-        for frame_idx, feature in zip(data["frame_idx"].tolist(), data["features"]):
-            result = epfe.process_frame(feature)
-            scores.append((int(frame_idx), result["event_score"]))
+        scores = epfe.score_video(data["features"])
 
         video_scores[video_id] = {
+            "frame_idx": data["frame_idx"].tolist(),
             "scores": scores,
             "gt_events": load_video_labels(video_id),
             "total_frames": int(data["frame_idx"][-1]),
         }
-
     return video_scores
 
 
-def _eval_gate(config, video_scores: dict) -> dict:
-    """Evaluiert Gate-Parameter auf vorberechneten Scores."""
+def _sliding_mean_std(scores: np.ndarray, window_size: int):
+    # returns (win_mean, win_std) for each full window starting at index i
+    shape = (len(scores) - window_size + 1, window_size)
+    strides = (scores.strides[0], scores.strides[0])
+    windows = np.lib.stride_tricks.as_strided(scores, shape=shape, strides=strides)
+    return windows.mean(axis=1), windows.std(axis=1) + 1e-6
+
+
+def _triggers_fixed(scores: np.ndarray, frame_idx: list, threshold: float, cooldown: int):
+    # gate_fixed: score > threshold + cooldown
+    trigger_frames = []
+    last_event_frame = -cooldown
+    for i, score in enumerate(scores):
+        fidx = frame_idx[i]
+        if score > threshold and fidx - last_event_frame >= cooldown:
+            last_event_frame = fidx
+            trigger_frames.append(fidx)
+    return trigger_frames
+
+
+def _triggers_th(scores: np.ndarray, frame_idx: list, k: float, window_size: int, cooldown: int):
+    # gate_th: adaptive threshold (mean + k*std), no confirmation stage
+    N = len(scores)
+    if N < window_size:
+        return []
+    win_mean, win_std = _sliding_mean_std(scores, window_size)
+    threshold = win_mean + k * win_std
+
+    trigger_frames = []
+    last_event_frame = -cooldown
+    for i in range(window_size - 1, N):
+        wi = i - (window_size - 1)
+        score = scores[i]
+        thr = threshold[wi]
+        fidx = frame_idx[i]
+        if score > thr and fidx - last_event_frame >= cooldown:
+            last_event_frame = fidx
+            trigger_frames.append(fidx)
+    return trigger_frames
+
+
+def _triggers_full(scores: np.ndarray, frame_idx: list,
+                   k, window_size, confirm_frames, cooldown) -> list:
+    # gate.py (full): adaptive threshold + 2-stage confirmation
+    N = len(scores)
+    if N < window_size:
+        return []
+    win_mean, win_std = _sliding_mean_std(scores, window_size)
+    threshold = win_mean + k * win_std
+
+    trigger_frames = []
+    candidate_frame = None
+    mean_at_spike = 0.0
+    confirm_count = 0
+    last_event_frame = -cooldown
+
+    for i in range(window_size - 1, N):
+        wi = i - (window_size - 1)
+        score = scores[i]
+        mean = win_mean[wi]
+        thr = threshold[wi]
+        fidx = frame_idx[i]
+
+        if candidate_frame is not None:
+            if score > mean_at_spike:
+                confirm_count += 1
+                if confirm_count >= confirm_frames:
+                    last_event_frame = candidate_frame
+                    trigger_frames.append(candidate_frame)
+                    candidate_frame = None
+                    confirm_count = 0
+            else:
+                candidate_frame = None
+                confirm_count = 0
+
+        if (score > thr and candidate_frame is None
+                and fidx - last_event_frame >= cooldown):
+            candidate_frame = fidx
+            mean_at_spike = mean
+            confirm_count = 0
+
+    return trigger_frames
+
+
+def _eval_gate(video_scores: dict, config, gate_mode: str = "full") -> dict:
+    # run gate on precomputed scores, aggregate metrics across all videos
     total_gt = 0
     matched = 0
     total_triggers = 0
     total_frames = 0
 
-    for video_data in video_scores.values():
-        gate = EventGate(config)
-        trigger_frames = []
-
-        for frame_idx, score in video_data["scores"]:
-            triggered = gate.check_event({"event_score": score}, frame_idx)
-            if triggered is not False:
-                trigger_frames.append(int(triggered))
-
-        gt_events = video_data["gt_events"]
+    for v in video_scores.values():
+        if gate_mode == "fixed":
+            trigger_frames = _triggers_fixed(
+                v["scores"], v["frame_idx"], config.fixed_threshold, config.cooldown,
+            )
+        elif gate_mode == "th":
+            trigger_frames = _triggers_th(
+                v["scores"], v["frame_idx"], config.k, config.window_size, config.cooldown,
+            )
+        else:  # full
+            trigger_frames = _triggers_full(
+                v["scores"], v["frame_idx"],
+                config.k, config.window_size, config.confirm_frames, config.cooldown,
+            )
+        gt_events = v["gt_events"]
         used_triggers = set()
         for gt in gt_events:
             matches = [t for t in trigger_frames
@@ -74,7 +164,7 @@ def _eval_gate(config, video_scores: dict) -> dict:
 
         total_gt += len(gt_events)
         total_triggers += len(trigger_frames)
-        total_frames += video_data["total_frames"]
+        total_frames += v["total_frames"]
 
     recall = matched / total_gt if total_gt > 0 else 0
     precision = matched / total_triggers if total_triggers > 0 else 0
@@ -86,18 +176,55 @@ def _eval_gate(config, video_scores: dict) -> dict:
         "recall": round(recall, 4),
         "precision": round(precision, 4),
         "call_red": round(call_red, 4),
-        "triggers": total_triggers,
+        "trigger_acc": calculate_triggeracc(total_triggers, matched, total_gt),
+        "tim_val": calculate_timval(total_triggers, matched, total_gt)["timval"],
     }
 
 
-def _print_results(results: list, top_n: int):
-    header = (f"{'Rank':<6}{'k':<7}{'k_min':<8}{'k_max':<8}{'cf':<6}"
-              f"{'F1':<8}{'recall':<9}{'prec':<8}{'call_red'}")
+def _param_keys(gate_mode: str, epfe_mode: str = "mamba"):
+    # which params show up in the results table
+    cols = []
+    if epfe_mode == "ema":
+        cols.append(("alpha", "alpha", 8))
+    if gate_mode == "fixed":
+        cols.append(("threshold", "fixed_threshold", 10))
+    elif gate_mode == "th":
+        cols.append(("k", "k", 7))
+    else:  # full
+        cols.extend([("k", "k", 7), ("cf", "confirm_frames", 5)])
+    return cols
+
+
+def _print_results(results: list, top_n: int, gate_mode: str = "full", epfe_mode: str = "mamba"):
+    pcols = _param_keys(gate_mode, epfe_mode)
+    header = f"{'Rank':<6}" + "".join(f"{label:<{w}}" for label, _, w in pcols)
+    header += f"{'F1':<8}{'recall':<9}{'prec':<8}{'call_red':<11}{'trig_acc':<11}{'tim_val'}"
     print(header)
     print("-" * len(header))
     for rank, r in enumerate(results[:top_n], 1):
-        print(f"{rank:<6}{r['k']:<7}{r['k_min']:<8}{r['k_max']:<8}{r['confirm_frames']:<6}"
-              f"{r['f1']:<8}{r['recall']:<9}{r['precision']:<8}{r['call_red']}")
+        row = f"{rank:<6}" + "".join(f"{r[k]:<{w}}" for _, k, w in pcols)
+        row += (f"{r['f1']:<8}{r['recall']:<9}{r['precision']:<8}"
+                f"{r['call_red']:<11}{r['trigger_acc']:<11}{r['tim_val']}")
+        print(row)
+
+
+def _build_combos(gate_mode: str, k_values, confirm_frames_values, threshold_values):
+    if gate_mode == "fixed":
+        if threshold_values is None:
+            # positive only; EMA scores are L2 distances, Mamba scores are logits
+            threshold_values = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
+        return [{"fixed_threshold": t} for t in threshold_values]
+    if gate_mode == "th":
+        if k_values is None:
+            k_values = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
+        return [{"k": k} for k in k_values]
+    # full
+    if k_values is None:
+        k_values = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
+    if confirm_frames_values is None:
+        confirm_frames_values = [1, 2, 3, 4, 5, 7, 10, 12, 15, 18, 22, 25, 30]
+    return [{"k": k, "confirm_frames": cf}
+            for k, cf in itertools.product(k_values, confirm_frames_values)]
 
 
 def tune_params(
@@ -105,91 +232,120 @@ def tune_params(
     split: str,
     weights: str = None,
     use_mamba: bool = True,
+    gate_mode: str = "full",
+    epfe_mode: str = "mamba",
+    alpha_values: list = None,
     k_values: list = None,
     confirm_frames_values: list = None,
-    k_min_ratio_values: list = None,
-    k_max_ratio_values: list = None,
+    threshold_values: list = None,
 ):
-    if k_values is None:
-        k_values = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
-    if confirm_frames_values is None:
-        confirm_frames_values = [3, 5, 7, 10, 13, 15]
-    if k_min_ratio_values is None:
-        k_min_ratio_values = [0.3, 0.5, 0.6, 0.7, 0.8, 0.9]
-    if k_max_ratio_values is None:
-        k_max_ratio_values = [1.1, 1.2, 1.3, 1.5, 1.7, 2.0, 2.5]
-
     config = load_config(dataset)
     video_ids = getattr(config, f"video_ids_{split}")
 
-    print(f"Pre-computing event scores for {len(video_ids)} videos...")
-    video_scores = _precompute_scores(config, dataset, video_ids, weights, use_mamba)
+    # alpha is an outer loop only for EMA (changes the scores)
+    if epfe_mode == "ema":
+        if alpha_values is None:
+            alpha_values = [0.01, 0.03, 0.05, 0.1, 0.2, 0.3]
+    else:
+        alpha_values = [None]
+
+    combos = _build_combos(gate_mode, k_values, confirm_frames_values, threshold_values)
+    total_combos = len(combos) * len(alpha_values)
+    print(f"EPFE: {epfe_mode} | Gate: {gate_mode}")
+    print(f"Sweep: {total_combos} combinations "
+          f"({len(alpha_values)} alpha x {len(combos)} gate)")
+
+    other_split = "test" if split in ("train", "val") else "train"
+    other_ids = getattr(config, f"video_ids_{other_split}", [])
+
+    # cache scores per alpha (or one entry for non-EMA)
+    val_scores_by_alpha = {}
+    test_scores_by_alpha = {}
+
+    results = []
+    progress = 0
+    for alpha_val in alpha_values:
+        if alpha_val is not None:
+            config.alpha = alpha_val
+            print(f"\n[alpha={alpha_val}] precomputing scores ({len(video_ids)} videos)...")
+        else:
+            print(f"\nPre-computing event scores ({len(video_ids)} videos)...")
+        video_scores = _precompute_scores(config, dataset, video_ids, weights, use_mamba, epfe_mode)
+        val_scores_by_alpha[alpha_val] = video_scores
+
+        for combo in combos:
+            for key, val in combo.items():
+                setattr(config, key, val)
+            metrics = _eval_gate(video_scores, config, gate_mode)
+            entry = {**combo, **metrics}
+            if alpha_val is not None:
+                entry["alpha"] = alpha_val
+            results.append(entry)
+            progress += 1
+            if progress % 10 == 0 or progress == total_combos:
+                best = max(results, key=lambda x: x["f1"])
+                print(f"  [{progress}/{total_combos}] best F1: {best['f1']:.4f}")
+
+    by_f1 = sorted(results, key=lambda x: x["f1"], reverse=True)
+    by_tim = sorted(results, key=lambda x: x["tim_val"], reverse=True)
+    top5_f1 = by_f1[:5]
+    top5_tim = by_tim[:5]
+
+    print(f"\nFinal top 5 by F1 ({split.upper()}):")
+    _print_results(top5_f1, 5, gate_mode, epfe_mode)
+    print(f"\nFinal top 5 by TimVal ({split.upper()}):")
+    _print_results(top5_tim, 5, gate_mode, epfe_mode)
+
+    if not other_ids:
+        return by_f1[0]
+
+    # cross-check on held-out split: precompute test scores per used alpha
+    used_alphas = {c.get("alpha") for c in top5_f1 + top5_tim}
+    print(f"\nPre-computing event scores for {other_split.upper()} ({len(other_ids)} videos)...")
+    for alpha_val in used_alphas:
+        if alpha_val is not None:
+            config.alpha = alpha_val
+        test_scores_by_alpha[alpha_val] = _precompute_scores(
+            config, dataset, other_ids, weights, use_mamba, epfe_mode,
+        )
     print("Done.\n")
 
-    # --- Stage 1: k / confirm_frames mit weiten Grenzen ---
-    stage1_combos = list(itertools.product(k_values, confirm_frames_values))
-    print(f"Stage 1: {len(stage1_combos)} Kombinationen (k × confirm_frames) ...")
+    def _eval_candidates(candidates, label):
+        param_keys = [k for _, k, _ in _param_keys(gate_mode, epfe_mode)]
+        out = []
+        for c in candidates:
+            combo = {k: c[k] for k in param_keys}
+            for key, val in combo.items():
+                setattr(config, key, val)
+            scores = test_scores_by_alpha[c.get("alpha")]
+            metrics = _eval_gate(scores, config, gate_mode)
+            out.append({**combo, **metrics})
+        print(f"\n{label} on {other_split.upper()} (same order as {split.upper()}):")
+        _print_results(out, len(out), gate_mode, epfe_mode)
 
-    stage1_results = []
-    for i, (k, cf) in enumerate(stage1_combos, 1):
-        config.k = k
-        config.k_min = round(k * 0.5, 4)
-        config.k_max = round(k * 2.0, 4)
-        config.confirm_frames = cf
-        metrics = _eval_gate(config, video_scores)
-        stage1_results.append({"k": k, "k_min": config.k_min, "k_max": config.k_max,
-                                "confirm_frames": cf, **metrics})
-        if i % 10 == 0 or i == len(stage1_combos):
-            best = max(stage1_results, key=lambda x: x["f1"])
-            print(f"  [{i}/{len(stage1_combos)}] best F1: {best['f1']:.4f}  "
-                  f"(k={best['k']}, cf={best['confirm_frames']})")
+    _eval_candidates(top5_f1, "Top 5 F1")
+    _eval_candidates(top5_tim, "Top 5 TimVal")
 
-    stage1_results.sort(key=lambda x: x["f1"], reverse=True)
-    print("\nStage 1 top 5:")
-    _print_results(stage1_results, 5)
-
-    # --- Stage 2: k_min / k_max für die 5 besten Kandidaten ---
-    boundary_combos = list(itertools.product(k_min_ratio_values, k_max_ratio_values))
-    stage2_candidates = stage1_results[:5]
-    total_stage2 = len(stage2_candidates) * len(boundary_combos)
-    print(f"\nStage 2: {total_stage2} Kombinationen (5 Kandidaten × {len(boundary_combos)} Grenzen) ...")
-
-    stage2_results = []
-    for i, (candidate, (k_min_r, k_max_r)) in enumerate(
-        itertools.product(stage2_candidates, boundary_combos), 1
-    ):
-        config.k = candidate["k"]
-        config.k_min = round(candidate["k"] * k_min_r, 4)
-        config.k_max = round(candidate["k"] * k_max_r, 4)
-        config.confirm_frames = candidate["confirm_frames"]
-        metrics = _eval_gate(config, video_scores)
-        stage2_results.append({
-            "k": candidate["k"],
-            "k_min": config.k_min,
-            "k_max": config.k_max,
-            "confirm_frames": candidate["confirm_frames"],
-            **metrics,
-        })
-        if i % 50 == 0 or i == total_stage2:
-            best = max(stage2_results, key=lambda x: x["f1"])
-            print(f"  [{i}/{total_stage2}] best F1: {best['f1']:.4f}  "
-                  f"(k={best['k']}, k_min={best['k_min']}, k_max={best['k_max']}, cf={best['confirm_frames']})")
-
-    stage2_results.sort(key=lambda x: x["f1"], reverse=True)
-    print("\nFinal top 5:")
-    _print_results(stage2_results, 5)
-
-    return stage2_results[0]
+    return by_f1[0]
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("dataset",   choices=["epickitchen", "soccernet"])
-    parser.add_argument("split",     choices=["train", "test"])
-    parser.add_argument("--weights", default=None, help="Pfad zu trainierten Gewichten (.pt)")
-    parser.add_argument("--no_mamba", action="store_true", help="Ablation: Mamba weglassen")
+    parser.add_argument("dataset",    choices=["soccernet", "ego4d"])
+    parser.add_argument("split",      choices=["train", "val", "test"])
+    parser.add_argument("--weights",  default=None, help="path to trained weights (.pt)")
+    parser.add_argument("--no_mamba", action="store_true", help="ablation: drop Mamba")
+    parser.add_argument("--gate",     choices=["full", "th", "fixed"], default="full",
+                        help="gate mode: fixed | th (adaptive) | full (adaptive + confirm)")
+    parser.add_argument("--epfe",     choices=list(EPFE_MODULES.keys()), default="mamba",
+                        help="EPFE backbone: mamba (trained) | ema (parameter-free)")
+    parser.add_argument("--alpha",    type=float, default=None,
+                        help="EMA decay; if set, used as the single alpha (otherwise sweep)")
     args = parser.parse_args()
 
-    best = tune_params(args.dataset, args.split, args.weights, use_mamba=not args.no_mamba)
-    print(f"\nBest: k={best['k']}, k_min={best['k_min']}, k_max={best['k_max']}, "
-          f"confirm_frames={best['confirm_frames']}  ->  F1={best['f1']}, recall={best['recall']}")
+    alpha_values = [args.alpha] if args.alpha is not None else None
+    best = tune_params(args.dataset, args.split, args.weights,
+                       use_mamba=not args.no_mamba,
+                       gate_mode=args.gate, epfe_mode=args.epfe,
+                       alpha_values=alpha_values)
+    print(f"\nBest: {best}")

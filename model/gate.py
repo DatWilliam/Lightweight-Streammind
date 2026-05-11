@@ -1,56 +1,59 @@
 import collections
 import numpy as np
 
+
 class EventGate:
+    """
+    Two-stage threshold gate over a per-frame event score stream.
+
+    Stage 1: spike detection. Trigger if score > mean + k * std on the
+             sliding window AND cooldown since last fire has elapsed.
+    Stage 2: confirmation. Stay above the mean captured at spike time
+             for `confirm_frames` consecutive frames; otherwise reject.
+
+    Reports the spike frame, not the confirmation frame.
+    """
+
     def __init__(self, cfg):
         self.window_size = cfg.window_size
         self.cooldown = cfg.cooldown
         self.confirm_frames = cfg.confirm_frames
-        self.history = collections.deque(maxlen=self.window_size) # sliding window buffer
-        self.last_event_frame = -self.cooldown
-
         self.k_base = cfg.k
-        self.k_min = cfg.k_min
-        self.k_max = cfg.k_max
 
-        # two-stage confirmation
+        self.history = collections.deque(maxlen=self.window_size)
+        self.last_event_frame = -self.cooldown
         self.candidate_frame = None
-        self.confirm_count = 0  # consecutive frames
-        self.mean_at_spike = 0.0  # mean zum Zeitpunkt des Spikes (fix verschiebendes mean)
+        self.confirm_count = 0
+        self.mean_at_spike = 0.0  # snapshot, not moving mean
 
     def check_event(self, features, frame_idx):
         score = features["event_score"]
         self.history.append(score)
 
-        # fill the buffer first
+        # warm-up: gate only fires once history is full
         if len(self.history) < self.window_size:
             return False
 
         mean = np.mean(self.history)
         std = np.std(self.history) + 1e-6
+        threshold = mean + self.k_base * std
 
-        # adaptive k: scale k with coefficient of variation (CV)
-        cv = std / (mean + 1e-6)
-        k_raw = self.k_base * cv / 0.15
-        k_adapted = np.clip(k_raw, self.k_min, self.k_max)
-        threshold = mean + k_adapted * std
-
-        # stage 2: confirm event by checking sustained event-score
+        # stage 2: candidate is alive, check sustained signal
         if self.candidate_frame is not None:
-            if score > self.mean_at_spike:  # mean zum Spike-Zeitpunkt, nicht gleitend
+            if score > self.mean_at_spike:
                 self.confirm_count += 1
                 if self.confirm_count >= self.confirm_frames:
                     self.last_event_frame = self.candidate_frame
-                    trigger_frame = self.candidate_frame  # Spike-Frame melden, nicht Confirmation-Frame
+                    trigger_frame = self.candidate_frame
                     self.candidate_frame = None
                     self.confirm_count = 0
                     return trigger_frame
             else:
-                # score dropped below mean, reject candidate
+                # signal dropped, reject candidate
                 self.candidate_frame = None
                 self.confirm_count = 0
 
-        # stage 1: detect spike above threshold
+        # stage 1: detect new spike
         if (
             score > threshold
             and self.candidate_frame is None

@@ -5,7 +5,7 @@ from mamba_ssm import Mamba
 
 
 class MambaLayer(nn.Module):
-    """Pre-Norm Mamba-Block mit Residual-Verbindung."""
+    # pre-norm Mamba block + residual
     def __init__(self, d_model: int):
         super().__init__()
         self.norm = nn.LayerNorm(d_model)
@@ -16,77 +16,58 @@ class MambaLayer(nn.Module):
 
 
 class EPFECached(nn.Module):
-    """
-    Mamba-based EPFE ohne CLIP — nutzt vorberechnete Features aus dem Cache.
-    Identische Architektur wie EPFE, aber process_frame erwartet ein
-    numpy-Array (512,) statt eines raw Frames.
-    """
+    """Mamba-based EPFE for the cached pipeline (CLIP features pre-extracted)."""
 
     def __init__(self, cfg, use_mamba: bool = True):
         super().__init__()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.use_mamba = use_mamba
 
-        feature_dim = 768 if "ViT-L" in cfg.clip_model else 512
+        feature_dim = 512
         self.mamba = nn.Sequential(MambaLayer(feature_dim), nn.LayerNorm(feature_dim))
         self.score_head = nn.Linear(feature_dim, 1)
-
         self.buffer_size = cfg.mamba_buffer_size
-        self.feature_buffer = []
 
         self.to(self.device)
 
-    def process_frame(self, feature):
-        """
-        feature: numpy array (512,) aus dem Cache
-        Gibt dasselbe Dict zurück wie EPFE.process_frame.
-        """
-        if isinstance(feature, np.ndarray):
-            feature = torch.from_numpy(feature).to(self.device)
-        else:
-            feature = feature.to(self.device)
-
-        self.feature_buffer.append(feature)
-
-        if self.use_mamba and len(self.feature_buffer) < self.buffer_size:
-            return {"event_score": 0.0, "perception_token": None}
-
-        with torch.no_grad():
-            if self.use_mamba:
-                seq = torch.stack(self.feature_buffer, dim=0).unsqueeze(0)  # (1, buffer_size, 512)
-                out = self.mamba(seq)                                         # (1, buffer_size, 512)
-                perception_token = out[0, -1]                                 # (512,)
-            else:
-                perception_token = feature                                    # (512,) — kein Kontext
-            event_score = self.score_head(perception_token)                   # (1,)
-
-        self.feature_buffer.pop(0)
-
-        return {
-            "event_score": float(event_score.item()),
-            "perception_token": perception_token.detach()
-        }
-
     def forward_train(self, clip_features):
-        """
-        Training-Modus: erwartet vorberechnete CLIP-Features.
-        Args:
-            clip_features: (batch, seq_len, 512) torch.Tensor
-        Returns:
-            event_scores: (batch, seq_len) torch.Tensor
-        """
+        # clip_features: (batch, seq_len, 512). Returns (batch, seq_len) scores.
         if self.use_mamba:
             assert clip_features.shape[1] == self.buffer_size, \
                 f"seq_len {clip_features.shape[1]} != buffer_size {self.buffer_size}"
             out = self.mamba(clip_features)
         else:
-            out = clip_features  # kein Mamba, direkt zur Score Head
-        event_scores = self.score_head(out)
-        return event_scores.squeeze(-1)
+            out = clip_features  # no temporal context
+        return self.score_head(out).squeeze(-1)
 
-    def reset(self):
-        """Feature-Buffer leeren (zwischen Videos)."""
-        self.feature_buffer = []
+    @torch.no_grad()
+    def score_video(self, features_np, batch_size: int = 256):
+        """Bulk inference for one video. Same outputs as a per-frame loop, GPU-batched."""
+        N = len(features_np)
+        feats = torch.from_numpy(features_np).to(self.device)
+
+        if not self.use_mamba:
+            return self.score_head(feats).squeeze(-1).cpu().numpy()
+
+        if N < self.buffer_size:
+            return np.zeros(N, dtype=np.float32)
+
+        # sliding windows: (N - buffer_size + 1, buffer_size, D)
+        windows = feats.unfold(0, self.buffer_size, 1).permute(0, 2, 1).contiguous()
+
+        out_scores = []
+        for i in range(0, len(windows), batch_size):
+            batch = windows[i:i + batch_size]
+            mamba_out = self.mamba(batch)              # (B, buffer_size, D)
+            last_token = mamba_out[:, -1]              # (B, D)
+            out_scores.append(self.score_head(last_token).squeeze(-1))
+
+        scores_concat = torch.cat(out_scores, dim=0)   # (N - buffer_size + 1,)
+
+        # first (buffer_size - 1) frames have no full context: pad with 0
+        full_scores = torch.zeros(N, device=self.device)
+        full_scores[self.buffer_size - 1:] = scores_concat
+        return full_scores.cpu().numpy()
 
     def load_weights(self, path):
         self.load_state_dict(torch.load(path, map_location=self.device, weights_only=True))

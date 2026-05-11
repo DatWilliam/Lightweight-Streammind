@@ -1,5 +1,3 @@
-# python -m eval.eval epickitchen test
-# python -m eval.eval soccernet test
 from tqdm import tqdm
 import argparse
 from config import load_config
@@ -14,8 +12,8 @@ def run_eval(dataset: str, split: str):
     config = load_config(dataset) # load config for dataset
     video_ids = getattr(config, f"video_ids_{split}")
 
-    if dataset == "epickitchen":
-        from data.prepare_epickitchen import load_video_labels, load_video, get_frame_count, get_total_gt_events
+    if dataset == "ego4d":
+        from data.prepare_ego4d import load_video_labels, load_video, get_frame_count, get_total_gt_events
     else:
         from data.prepare_soccernet import load_video_labels, load_video, get_frame_count, get_total_gt_events
 
@@ -80,7 +78,7 @@ def run_eval(dataset: str, split: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("dataset", choices=["epickitchen", "soccernet"], default="epickitchen", nargs="?")
+    parser.add_argument("dataset", choices=["soccernet", "ego4d"], default="soccernet", nargs="?")
     parser.add_argument("split", choices=["train", "test"], default="train", nargs="?")
     args = parser.parse_args()
     run_eval(args.dataset, args.split)
