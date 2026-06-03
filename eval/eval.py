@@ -3,32 +3,32 @@ import argparse
 from config import load_config
 from model.epfe import EPFE
 from model.gate import EventGate
-from utils.eval_func import calculate_timval, calculate_triggeracc
+from utils.eval_func import per_video_metrics, macro_average, count_phase_fp
 
 BATCH_SIZE = 64
 
-def run_eval(dataset: str, split: str):
 
-    config = load_config(dataset) # load config for dataset
+def run_eval(dataset: str, split: str):
+    config = load_config(dataset)
     video_ids = getattr(config, f"video_ids_{split}")
 
     if dataset == "ego4d":
-        from data.prepare_ego4d import load_video_labels, load_video, get_frame_count, get_total_gt_events
+        from data.prepare_ego4d import load_video_labels, load_video, get_frame_count
     else:
-        from data.prepare_soccernet import load_video_labels, load_video, get_frame_count, get_total_gt_events
+        from data.prepare_soccernet import load_video_labels, load_video, get_frame_count
 
-    all_trigger_frames = [] # over all videos
-    found_events = 0
+    per_video = []
+    skipped_no_gt = 0
 
     for video_id in video_ids:
         gate = EventGate(config)
         epfe = EPFE(config)
         gt_events = load_video_labels(video_id)
-        trigger_frames = [] # for current video
-        batch_frames = []
-        batch_indices = []
+        trigger_frames = []
+        batch_frames, batch_indices = [], []
+        n_frames = get_frame_count([video_id])
 
-        for frame_idx, frame in enumerate(tqdm(load_video(video_id), total=get_frame_count([video_id]), desc=video_id), start=1):
+        for frame_idx, frame in enumerate(tqdm(load_video(video_id), total=n_frames, desc=video_id), start=1):
             batch_frames.append(frame)
             batch_indices.append(frame_idx)
 
@@ -45,36 +45,38 @@ def run_eval(dataset: str, split: str):
                 if triggered is not False:
                     trigger_frames.append(int(triggered))
 
-
         used_triggers = set()
-        # look for closest trigger frame to gt
-        # track so no double triggers
         for gt in gt_events:
             matches = [t for t in trigger_frames
                        if t not in used_triggers and abs(t - gt["start_frame"]) <= config.tolerance * config.fps]
             if matches:
                 closest = min(matches, key=lambda x: abs(x - gt["start_frame"]))
                 used_triggers.add(closest)
-                found_events += 1
 
-        all_trigger_frames.extend(trigger_frames)
+        tp = len(used_triggers)
+        false_triggers = [t for t in trigger_frames if t not in used_triggers]
+        gt_starts = [e["start_frame"] for e in gt_events]
+        fp_phase = count_phase_fp(false_triggers, gt_starts)
 
-    llm_calls = len(all_trigger_frames)
-    call_red = 1 - (llm_calls / get_frame_count(video_ids))
-    recall = found_events / get_total_gt_events(video_ids)
-    precision = found_events / llm_calls
-    f1 = 2 * recall * precision / (recall + precision)
+        v = per_video_metrics(tp, fp_phase, len(gt_events), len(trigger_frames), n_frames)
+        if v is None:
+            skipped_no_gt += 1
+            continue
+        per_video.append(v)
 
+    avg = macro_average(per_video)
     metrics = {
-        "F1_SCORE": round(f1, 3),
-        "recall": round(recall, 3),
-        "precision": round(precision, 3),
-        "trigger_acc": max(0.0, calculate_triggeracc(llm_calls, found_events, get_total_gt_events(video_ids))),
-        "tim_val": max(0.0, calculate_timval(llm_calls, found_events, get_total_gt_events(video_ids))["timval"]),
-        "call_red_percent": round(call_red * 100, 2),
+        "F1_SCORE":         round(avg["f1"],          3),
+        "recall":           round(avg["recall"],      3),
+        "precision":        round(avg["precision"],   3),
+        "trigger_acc":      round(avg["trigger_acc"], 3),
+        "tim_val":          round(avg["tim_val"],     3),
+        "call_red_percent": round(avg["call_red"] * 100, 2),
     }
-
+    print(f"Macro-average ueber {len(per_video)} Videos"
+          + (f" ({skipped_no_gt} ohne GT-Events uebersprungen)" if skipped_no_gt else ""))
     print(metrics)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

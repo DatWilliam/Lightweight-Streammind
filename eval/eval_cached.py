@@ -2,16 +2,13 @@ import argparse
 import importlib
 import numpy as np
 from config import load_config
-from utils.eval_func import calculate_timval, calculate_triggeracc
+from utils.eval_func import per_video_metrics, macro_average, count_phase_fp
 
-# gate_mode -> module name
 GATE_MODULES = {
     "full":  "model.gate",
     "th":    "model.gate_th",
     "fixed": "model.gate_fixed",
 }
-
-# epfe_mode -> (module, class). EMA has no learnable params.
 EPFE_MODULES = {
     "mamba": ("model.epfe_cached", "EPFECached"),
     "ema":   ("model.epfe_ema",    "EPFEEMACached"),
@@ -21,9 +18,9 @@ EPFE_MODULES = {
 def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = True,
              gate_mode: str = "full", epfe_mode: str = "mamba", alpha: float = None):
     if dataset == "ego4d":
-        from data.prepare_ego4d import load_video_labels, get_total_gt_events, get_frame_count, get_cache_path
+        from data.prepare_ego4d import load_video_labels, get_cache_path
     else:
-        from data.prepare_soccernet import load_video_labels, get_total_gt_events, get_frame_count, get_cache_path
+        from data.prepare_soccernet import load_video_labels, get_cache_path
 
     EventGate = importlib.import_module(GATE_MODULES[gate_mode]).EventGate
     epfe_module, epfe_class = EPFE_MODULES[epfe_mode]
@@ -43,8 +40,8 @@ def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = Tr
     if weights:
         epfe.load_weights(weights)
 
-    all_trigger_frames = []
-    found_events = 0
+    per_video = []
+    skipped_no_gt = 0
 
     for video_id in video_ids:
         cache_path = get_cache_path(video_id)
@@ -57,7 +54,6 @@ def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = Tr
         gt_events = load_video_labels(video_id)
         data = np.load(str(cache_path))
 
-        # bulk EPFE inference, then gate frame-by-frame in numpy
         scores = epfe.score_video(data["features"])
 
         gate = EventGate(config)
@@ -68,7 +64,6 @@ def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = Tr
             if triggered is not False:
                 trigger_frames.append(int(triggered))
 
-        # match each GT to nearest unused trigger within tolerance
         used_triggers = set()
         for gt in gt_events:
             matches = [t for t in trigger_frames
@@ -76,27 +71,30 @@ def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = Tr
             if matches:
                 closest = min(matches, key=lambda x: abs(x - gt["start_frame"]))
                 used_triggers.add(closest)
-                found_events += 1
 
-        all_trigger_frames.extend(trigger_frames)
+        tp = len(used_triggers)
+        false_triggers = [t for t in trigger_frames if t not in used_triggers]
+        gt_starts = [e["start_frame"] for e in gt_events]
+        fp_phase = count_phase_fp(false_triggers, gt_starts)
+        n_frames = int(data["frame_idx"][-1])
 
-    llm_calls = len(all_trigger_frames)
-    total_frames = get_frame_count(video_ids)
-    call_red = 1 - (llm_calls / total_frames)
-    total_gt = get_total_gt_events(video_ids)
-    recall = found_events / total_gt
-    precision = found_events / llm_calls if llm_calls > 0 else 0
-    f1 = 2 * recall * precision / (recall + precision) if (recall + precision) > 0 else 0
+        v = per_video_metrics(tp, fp_phase, len(gt_events), len(trigger_frames), n_frames)
+        if v is None:
+            skipped_no_gt += 1
+            continue
+        per_video.append(v)
 
+    avg = macro_average(per_video)
     metrics = {
-        "F1_SCORE": round(f1, 3),
-        "recall": round(recall, 3),
-        "precision": round(precision, 3),
-        "trigger_acc": max(0.0, calculate_triggeracc(llm_calls, found_events, total_gt)),
-        "tim_val": max(0.0, calculate_timval(llm_calls, found_events, total_gt)["timval"]),
-        "call_red_percent": round(call_red * 100, 2),
+        "F1_SCORE":         round(avg["f1"],          3),
+        "recall":           round(avg["recall"],      3),
+        "precision":        round(avg["precision"],   3),
+        "trigger_acc":      round(avg["trigger_acc"], 3),
+        "tim_val":          round(avg["tim_val"],     3),
+        "call_red_percent": round(avg["call_red"] * 100, 2),
     }
-
+    print(f"Macro-average ueber {len(per_video)} Videos"
+          + (f" ({skipped_no_gt} ohne GT-Events uebersprungen)" if skipped_no_gt else ""))
     print(metrics)
 
 

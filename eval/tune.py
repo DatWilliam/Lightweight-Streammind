@@ -3,7 +3,7 @@ import importlib
 import itertools
 import numpy as np
 from config import load_config
-from utils.eval_func import calculate_triggeracc, calculate_timval
+from utils.eval_func import per_video_metrics, macro_average, count_phase_fp
 
 EPFE_MODULES = {
     "mamba": ("model.epfe_cached", "EPFECached"),
@@ -131,11 +131,8 @@ def _triggers_full(scores: np.ndarray, frame_idx: list,
 
 
 def _eval_gate(video_scores: dict, config, gate_mode: str = "full") -> dict:
-    # run gate on precomputed scores, aggregate metrics across all videos
-    total_gt = 0
-    matched = 0
-    total_triggers = 0
-    total_frames = 0
+    # run gate on precomputed scores, macro-average metrics across all videos
+    per_video = []
 
     for v in video_scores.values():
         if gate_mode == "fixed":
@@ -160,24 +157,25 @@ def _eval_gate(video_scores: dict, config, gate_mode: str = "full") -> dict:
             if matches:
                 closest = min(matches, key=lambda x: abs(x - gt["start_frame"]))
                 used_triggers.add(closest)
-                matched += 1
 
-        total_gt += len(gt_events)
-        total_triggers += len(trigger_frames)
-        total_frames += v["total_frames"]
+        tp = len(used_triggers)
+        false_triggers = [t for t in trigger_frames if t not in used_triggers]
+        gt_starts = [e["start_frame"] for e in gt_events]
+        fp_phase = count_phase_fp(false_triggers, gt_starts)
 
-    recall = matched / total_gt if total_gt > 0 else 0
-    precision = matched / total_triggers if total_triggers > 0 else 0
-    f1 = 2 * recall * precision / (recall + precision) if (recall + precision) > 0 else 0
-    call_red = 1 - (total_triggers / total_frames) if total_frames > 0 else 0
+        m = per_video_metrics(tp, fp_phase, len(gt_events),
+                              len(trigger_frames), v["total_frames"])
+        if m is not None:
+            per_video.append(m)
 
+    avg = macro_average(per_video)
     return {
-        "f1": round(f1, 4),
-        "recall": round(recall, 4),
-        "precision": round(precision, 4),
-        "call_red": round(call_red, 4),
-        "trigger_acc": calculate_triggeracc(total_triggers, matched, total_gt),
-        "tim_val": calculate_timval(total_triggers, matched, total_gt)["timval"],
+        "f1":          round(avg["f1"],          4),
+        "recall":      round(avg["recall"],      4),
+        "precision":   round(avg["precision"],   4),
+        "call_red":    round(avg["call_red"],    4),
+        "trigger_acc": round(avg["trigger_acc"], 4),
+        "tim_val":     round(avg["tim_val"],     4),
     }
 
 
