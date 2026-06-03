@@ -8,7 +8,7 @@ from PIL import Image
 import cv2
 from config import load_config
 
-BATCH_SIZE = 16
+BATCH_SIZE = 64
 
 DATASETS = ("soccernet", "ego4d")
 
@@ -39,12 +39,16 @@ def extract_features(video_path: Path, model, preprocess, device, sample_stride:
 
     cap = cv2.VideoCapture(str(video_path))
     out_idx = 0
+    # use cap.grab() to skip frames cheaply (no color conversion / no buffer copy)
+    # and only cap.read() (full decode) on the frames we actually keep.
     for src_idx in tqdm(range(total), desc=video_path.name):
+        if src_idx % sample_stride != 0:
+            if not cap.grab():
+                break
+            continue
         ret, frame = cap.read()
         if not ret:
             break
-        if src_idx % sample_stride != 0:
-            continue
         out_idx += 1
         batch_frames.append(frame)
         batch_indices.append(out_idx)
