@@ -1,6 +1,6 @@
 # A lightweight version of StreamMind for my Bachelor-Thesis
 
-This Version uses Mamba instead of EMA.
+This node runs the EMA baseline only (the Mamba EPFE has been removed here).
 
 
 ## Acknowledgments

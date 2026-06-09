@@ -1,6 +1,3 @@
-import clip
-from PIL import Image
-import cv2
 import torch
 import numpy as np
 
@@ -9,11 +6,10 @@ class EPFEEMACached:
     """
     EMA baseline on cached CLIP features. Parameter-free: score = ||feat - state||,
     state updated as state <- alpha * feat + (1 - alpha) * state.
-    Mirrors EPFECached interface (score_video, eval, load_weights) for drop-in use.
+    Exposes score_video / eval for the cached eval pipeline.
     """
 
-    def __init__(self, cfg, use_mamba: bool = True):
-        # use_mamba is accepted for interface parity, but ignored
+    def __init__(self, cfg):
         self.alpha = cfg.alpha
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -30,11 +26,7 @@ class EPFEEMACached:
         return scores
 
     def eval(self):
-        # no-op, kept for interface parity
-        pass
-
-    def load_weights(self, path):
-        # no learnable params, kept for interface parity
+        # no-op; parameter-free, kept so the eval pipeline can call it
         pass
 
 
@@ -45,6 +37,7 @@ class EPFE:
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        import clip  # lazy: only the live path needs CLIP/torchvision
         self.model, self.preprocess = clip.load(cfg.clip_model, device=self.device)
         self.model.eval()
 
@@ -52,6 +45,8 @@ class EPFE:
             param.requires_grad = False
 
     def process_batch(self, frames):
+        import cv2
+        from PIL import Image
         images = torch.stack([
             self.preprocess(Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)))
             for f in frames
@@ -74,6 +69,8 @@ class EPFE:
         return results
 
     def process_frame(self, frame):
+        import cv2
+        from PIL import Image
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # convert BGR to RGB
         image = Image.fromarray(frame) # convert np_arr to PIL image
 

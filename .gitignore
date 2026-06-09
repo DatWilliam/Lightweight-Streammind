@@ -11,3 +11,5 @@ data/download_soccernet.py
 checkpoints/
 data/features/
 *.npz
+.claude/
+data/data

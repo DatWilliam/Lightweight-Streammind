@@ -1,16 +1,28 @@
 from tqdm import tqdm
 import argparse
+import importlib
 from config import load_config
-from model.epfe import EPFE
-from model.gate import EventGate
+from model.epfe_ema import EPFE
 from utils.eval_func import per_video_metrics, macro_average, count_phase_fp
 
 BATCH_SIZE = 64
 
+GATE_MODULES = {
+    "full":  "model.gate",
+    "th":    "model.gate_th",
+    "fixed": "model.gate_fixed",
+}
 
-def run_eval(dataset: str, split: str):
+
+def run_eval(dataset: str, split: str, gate_mode: str = "full", alpha: float = None):
+    """Live (streaming) eval: decode frames from video, CLIP -> EMA-EPFE -> gate. No cache."""
     config = load_config(dataset)
     video_ids = getattr(config, f"video_ids_{split}")
+    if alpha is not None:
+        config.alpha = alpha
+    print(f"EPFE: ema (alpha={config.alpha}) | Gate: {gate_mode} | live streaming")
+
+    EventGate = importlib.import_module(GATE_MODULES[gate_mode]).EventGate
 
     if dataset == "ego4d":
         from data.prepare_ego4d import load_video_labels, load_video, get_frame_count
@@ -81,6 +93,10 @@ def run_eval(dataset: str, split: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset", choices=["soccernet", "ego4d"], default="soccernet", nargs="?")
-    parser.add_argument("split", choices=["train", "test"], default="train", nargs="?")
+    parser.add_argument("split", choices=["train", "val", "test"], default="test", nargs="?")
+    parser.add_argument("--gate", choices=list(GATE_MODULES.keys()), default="full",
+                        help="gate mode: fixed | th (adaptive) | full (adaptive + confirm)")
+    parser.add_argument("--alpha", type=float, default=None,
+                        help="EMA decay (overrides config.alpha)")
     args = parser.parse_args()
-    run_eval(args.dataset, args.split)
+    run_eval(args.dataset, args.split, gate_mode=args.gate, alpha=args.alpha)
