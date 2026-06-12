@@ -6,21 +6,28 @@ class BaseConfig:
     ROOT_DIR = Path(__file__).resolve().parent
     DATA_DIR = ROOT_DIR / "data"
     clip_model: str = "ViT-B/32"
-    window_size: int = 30          # gate sliding window (frames)
     mamba_buffer_size: int = 16    # Mamba context (frames)
-    alpha: float = 0.3           # EMA decay (used by EPFE-EMA)
 
+class SoccerNetConfig(BaseConfig): # 25 -> 2 FPS
+    fps: float = 25 / 12           # target fps for training and gate
+    sample_stride: int = 12        # divisor to get from source fps to target fps
+    event_radius: int = 1          # mamba training tolerance (frames +-)
+    cooldown: int = 2              # min frames between triggers (in frames)
+    tolerance: int = 5             # eval match window (in seconds)
 
-class SoccerNetConfig(BaseConfig):
-    fps: int = 25
-    k: float = 3.5                 # gate threshold = mean + k * std
-    cooldown: int = 25             # min frames between triggers
-    confirm_frames: int = 10       # frames to sustain above mean_at_spike
-    tolerance: int = 5             # eval match window (seconds)
-    event_radius: int = 15         # train label radius around event (frames)
+    k: float = 3.5                 # multiplier for standard deviation in gate threshold
+    confirm_frames: int = 1        # consecutive frames to confirm trigger (in frames)
+    window_size: int = 30          # context for k (in frames)
+    alpha: float = 0.3             # EMA decay
     fixed_threshold: float = 0.0   # for gate_fixed: trigger when score > this
 
-    # 58 Matches (116 Videos), nach Match gruppiert, 70/15/15 split: 40/8/10 Matches.
+    k_sweep                = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
+    confirm_frames_sweep   = [1, 2, 3, 4, 5, 7, 10, 12, 15, 18, 22, 25, 30]
+    fixed_threshold_sweep  = [0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0]
+    alpha_sweep            = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
+    window_size_sweep      = [10, 20, 30, 60, 120, 150, 180, 200, 250, 300] 
+
+    # 70/15/15 split: 40/8/10 Matches
     video_ids_train = [
         "england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/1_224p.mkv",
         "england_epl/2014-2015/2015-02-21 - 18-00 Chelsea 1 - 1 Burnley/2_224p.mkv",
@@ -144,19 +151,26 @@ class SoccerNetConfig(BaseConfig):
         "england_epl/2016-2017/2017-05-13 - 14-30 Manchester City 2 - 1 Leicester/2_224p.mkv",
     ]
 
-class Ego4DConfig(BaseConfig):
-    # source 30 fps, paper samples at 2 fps
+class Ego4DConfig(BaseConfig): # 30 -> 2 FPS
     fps: int = 2                   # target fps for training and gate
-    sample_stride: int = 15        # source_fps / target_fps
-    event_radius: int = 1          # ±1 frame = 3 positive frames per event
-    k: float = 0.05              # gate threshold = mean + k * std
-    cooldown: int = 2              # min frames between triggers (= 1s @ 2fps)
-    confirm_frames: int = 1
-    tolerance: int = 1             # eval match window (seconds)
+    sample_stride: int = 15        # divisor to get from source fps to target fps
+    event_radius: int = 1          # mamba training tolerance (frames +-)
+    cooldown: int = 1              # min frames between triggers (in frames)
+    tolerance: int = 1             # eval match window (in seconds)
+
+    k: float = 0.05                # multiplier for standard deviation in gate threshold
+    confirm_frames: int = 1        # consecutive frames to confirm trigger (in frames)
+    window_size: int = 30          # context for k (in frames)
+    alpha: float = 0.3             # EMA decay
     fixed_threshold: float = 0.0   # for gate_fixed: trigger when score > this
 
-    # video_id = Ego4D UID (no extension); resolved via VIDEO_DIRS in prepare_ego4d.py
-    # 176 cached videos (after removing missing), random-shuffled with seed=42,
+    k_sweep                = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
+    confirm_frames_sweep   = [1, 2, 3, 4, 5, 7, 10, 12, 15, 18, 22, 25, 30]
+    fixed_threshold_sweep  = [0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0]
+    alpha_sweep            = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
+    window_size_sweep      = [10, 20, 30, 60, 120, 150, 180, 200, 250, 300] 
+
+
     # 70/15/15 split: 123/26/27.
     video_ids_train = [
         "38635888-7149-403b-8601-e3862b1ee8dc",

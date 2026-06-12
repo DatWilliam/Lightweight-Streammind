@@ -187,9 +187,9 @@ def _param_keys(gate_mode: str, epfe_mode: str = "mamba"):
     if gate_mode == "fixed":
         cols.append(("threshold", "fixed_threshold", 10))
     elif gate_mode == "th":
-        cols.append(("k", "k", 7))
+        cols.extend([("k", "k", 7), ("ws", "window_size", 5)])
     else:  # full
-        cols.extend([("k", "k", 7), ("cf", "confirm_frames", 5)])
+        cols.extend([("k", "k", 7), ("cf", "confirm_frames", 5), ("ws", "window_size", 5)])
     return cols
 
 
@@ -206,23 +206,28 @@ def _print_results(results: list, top_n: int, gate_mode: str = "full", epfe_mode
         print(row)
 
 
-def _build_combos(gate_mode: str, k_values, confirm_frames_values, threshold_values):
+def _build_combos(config, gate_mode: str, k_values, confirm_frames_values, threshold_values,
+                  window_size_values=None):
+    # Default-Sweep-Bereiche aus der Dataset-Config; CLI-Overrides haben Vorrang.
     if gate_mode == "fixed":
         if threshold_values is None:
-            # positive only; EMA scores are L2 distances, Mamba scores are logits
-            threshold_values = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
+            threshold_values = config.fixed_threshold_sweep
+        # fixed-Gate hat keine Sliding-Window-Statistik → window_size irrelevant.
         return [{"fixed_threshold": t} for t in threshold_values]
+    if window_size_values is None:
+        window_size_values = config.window_size_sweep
     if gate_mode == "th":
         if k_values is None:
-            k_values = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
-        return [{"k": k} for k in k_values]
+            k_values = config.k_sweep
+        return [{"k": k, "window_size": ws}
+                for k, ws in itertools.product(k_values, window_size_values)]
     # full
     if k_values is None:
-        k_values = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
+        k_values = config.k_sweep
     if confirm_frames_values is None:
-        confirm_frames_values = [1, 2, 3, 4, 5, 7, 10, 12, 15, 18, 22, 25, 30]
-    return [{"k": k, "confirm_frames": cf}
-            for k, cf in itertools.product(k_values, confirm_frames_values)]
+        confirm_frames_values = config.confirm_frames_sweep
+    return [{"k": k, "confirm_frames": cf, "window_size": ws}
+            for k, cf, ws in itertools.product(k_values, confirm_frames_values, window_size_values)]
 
 
 def tune_params(
@@ -243,11 +248,11 @@ def tune_params(
     # alpha is an outer loop only for EMA (changes the scores)
     if epfe_mode == "ema":
         if alpha_values is None:
-            alpha_values = [0.01, 0.03, 0.05, 0.1, 0.2, 0.3]
+            alpha_values = config.alpha_sweep
     else:
         alpha_values = [None]
 
-    combos = _build_combos(gate_mode, k_values, confirm_frames_values, threshold_values)
+    combos = _build_combos(config, gate_mode, k_values, confirm_frames_values, threshold_values)
     total_combos = len(combos) * len(alpha_values)
     print(f"EPFE: {epfe_mode} | Gate: {gate_mode}")
     print(f"Sweep: {total_combos} combinations "
@@ -262,12 +267,9 @@ def tune_params(
 
     results = []
     progress = 0
-    for alpha_val in alpha_values:
+    for ai, alpha_val in enumerate(alpha_values, 1):
         if alpha_val is not None:
             config.alpha = alpha_val
-            print(f"\n[alpha={alpha_val}] precomputing scores ({len(video_ids)} videos)...")
-        else:
-            print(f"\nPre-computing event scores ({len(video_ids)} videos)...")
         video_scores = _precompute_scores(config, dataset, video_ids, weights, use_mamba, epfe_mode)
         val_scores_by_alpha[alpha_val] = video_scores
 
@@ -280,33 +282,28 @@ def tune_params(
                 entry["alpha"] = alpha_val
             results.append(entry)
             progress += 1
-            if progress % 10 == 0 or progress == total_combos:
-                best = max(results, key=lambda x: x["f1"])
-                print(f"  [{progress}/{total_combos}] best F1: {best['f1']:.4f}")
+
+        # Heartbeat: ein Print pro Alpha-Durchlauf
+        best = max(results, key=lambda x: x["f1"])
+        tag = f"alpha={alpha_val} " if alpha_val is not None else ""
+        print(f"  [{ai}/{len(alpha_values)}] {tag}-> {progress}/{total_combos} combos | best F1 so far: {best['f1']:.4f}")
 
     by_f1 = sorted(results, key=lambda x: x["f1"], reverse=True)
     by_tim = sorted(results, key=lambda x: x["tim_val"], reverse=True)
-    top5_f1 = by_f1[:5]
-    top5_tim = by_tim[:5]
-
-    print(f"\nFinal top 5 by F1 ({split.upper()}):")
-    _print_results(top5_f1, 5, gate_mode, epfe_mode)
-    print(f"\nFinal top 5 by TimVal ({split.upper()}):")
-    _print_results(top5_tim, 5, gate_mode, epfe_mode)
+    top3_f1 = by_f1[:3]
+    top3_tim = by_tim[:3]
 
     if not other_ids:
         return by_f1[0]
 
     # cross-check on held-out split: precompute test scores per used alpha
-    used_alphas = {c.get("alpha") for c in top5_f1 + top5_tim}
-    print(f"\nPre-computing event scores for {other_split.upper()} ({len(other_ids)} videos)...")
+    used_alphas = {c.get("alpha") for c in top3_f1 + top3_tim}
     for alpha_val in used_alphas:
         if alpha_val is not None:
             config.alpha = alpha_val
         test_scores_by_alpha[alpha_val] = _precompute_scores(
             config, dataset, other_ids, weights, use_mamba, epfe_mode,
         )
-    print("Done.\n")
 
     def _eval_candidates(candidates, label):
         param_keys = [k for _, k, _ in _param_keys(gate_mode, epfe_mode)]
@@ -321,8 +318,8 @@ def tune_params(
         print(f"\n{label} on {other_split.upper()} (same order as {split.upper()}):")
         _print_results(out, len(out), gate_mode, epfe_mode)
 
-    _eval_candidates(top5_f1, "Top 5 F1")
-    _eval_candidates(top5_tim, "Top 5 TimVal")
+    _eval_candidates(top3_f1, "Top 3 F1")
+    _eval_candidates(top3_tim, "Top 3 TimVal")
 
     return by_f1[0]
 
@@ -342,8 +339,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     alpha_values = [args.alpha] if args.alpha is not None else None
-    best = tune_params(args.dataset, args.split, args.weights,
-                       use_mamba=not args.no_mamba,
-                       gate_mode=args.gate, epfe_mode=args.epfe,
-                       alpha_values=alpha_values)
-    print(f"\nBest: {best}")
+    tune_params(args.dataset, args.split, args.weights,
+                use_mamba=not args.no_mamba,
+                gate_mode=args.gate, epfe_mode=args.epfe,
+                alpha_values=alpha_values)

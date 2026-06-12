@@ -48,7 +48,7 @@ def get_video_path(video_id: str) -> Path:
 
 
 def get_cache_path(video_id: str) -> Path:
-    return get_video_path(video_id).with_suffix(".npz")
+    return get_video_path(video_id).with_name(get_video_path(video_id).stem + "_2fps.npz")
 
 
 def get_total_gt_events(video_ids: List[str]) -> int:

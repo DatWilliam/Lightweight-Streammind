@@ -22,11 +22,17 @@ class EPFEEMACached:
         scores = np.zeros(N, dtype=np.float32)
         if N == 0:
             return scores
-        state = features_np[0].astype(np.float32).copy()
+        # Cache ist schon float32 → kein astype noetig.
+        feats = np.ascontiguousarray(features_np, dtype=np.float32)
+        state = feats[0].copy()
+        alpha = np.float32(self.alpha)
+        one_minus_alpha = np.float32(1.0 - alpha)
         for i in range(1, N):
-            feat = features_np[i].astype(np.float32)
-            scores[i] = float(np.linalg.norm(feat - state))
-            state = self.alpha * feat + (1.0 - self.alpha) * state
+            feat = feats[i]
+            delta = feat - state
+            # np.dot ist deutlich schneller als np.linalg.norm bei kleinen Vektoren
+            scores[i] = np.sqrt(np.dot(delta, delta))
+            state = alpha * feat + one_minus_alpha * state
         return scores
 
     def eval(self):
