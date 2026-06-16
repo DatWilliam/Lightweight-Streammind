@@ -1,0 +1,44 @@
+nohup: ignoring input
+Device: cuda | CLIP: ViT-B/32 | gate: full | alpha: 0.3
+Split: test | videos: 20 | warmup: 50 frames | batch=1
+
+[1/20] 1_224p.mkv: 67450 frames
+[2/20] 2_224p.mkv: 67500 frames
+[3/20] 1_224p.mkv: 67500 frames
+[4/20] 2_224p.mkv: 72650 frames
+[5/20] 1_224p.mkv: 67495 frames
+[6/20] 2_224p.mkv: 70625 frames
+[7/20] 1_224p.mkv: 67500 frames
+[8/20] 2_224p.mkv: 67500 frames
+[9/20] 1_224p.mkv: 67500 frames
+[10/20] 2_224p.mkv: 67500 frames
+[11/20] 1_224p.mkv: 67500 frames
+[12/20] 2_224p.mkv: 75000 frames
+[13/20] 1_224p.mkv: 67675 frames
+[14/20] 2_224p.mkv: 74050 frames
+[15/20] 1_224p.mkv: 67500 frames
+[16/20] 2_224p.mkv: 69175 frames
+[17/20] 1_224p.mkv: 67500 frames
+[18/20] 2_224p.mkv: 75225 frames
+[19/20] 1_224p.mkv: 67500 frames
+[20/20] 2_224p.mkv: 81175 frames
+
+============================================================
+Frames measured : 1395520  (over 20 videos)
+Wall time       : 37852.2 s
+Throughput      : 36.9 fps
+Latency/frame   : 27.12 ms  (end-to-end, wall/frames)
+------------------------------------------------------------
+component      mean ms    p50 ms    p95 ms   % total
+decode           0.465     0.471     0.637      1.7%
+preprocess       1.712     1.631     2.284      6.3%
+encode          24.556    24.587    24.847     90.6%
+score            0.130     0.129     0.139      0.5%
+gate             0.233     0.230     0.252      0.9%
+sum             27.096
+------------------------------------------------------------
+Peak RAM (RSS)        : 1842 MB
+Peak VRAM (allocated) : 358 MB
+Peak VRAM (reserved)  : 370 MB
+(Jetson: unified memory — VRAM shares the physical RAM pool)
+============================================================
