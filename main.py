@@ -16,13 +16,13 @@ def run(cmd: str) -> None:
 
 DATASET = "soccernet"
 
-# ------------- Performance benchmark (batch=1 single-frame streaming) -------------
+# ------------- Performance benchmark (batch=1 single-frame streaming, whole split) -------------
 # throughput (fps), per-frame latency by component, peak RAM/VRAM
-# run(f"{PY} -m utils.bench {DATASET} --split test --video-index 0 --frames 20000 --warmup 50 --gate full")
+run(f"{PY} -m utils.bench {DATASET} --split test --warmup 50 --gate full")
 
 
 # ------------- Live streaming eval (EMA, no cache): confirmation gate on test -------------
-run(f"{PY} -m eval.eval {DATASET} test --gate full")
+# run(f"{PY} -m eval.eval {DATASET} test --gate full")
 
 
 print("\n" + "=" * 70 + "\nFERTIG.\n" + "=" * 70)

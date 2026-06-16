@@ -5,8 +5,8 @@ from pathlib import Path
 class BaseConfig:
     ROOT_DIR = Path(__file__).resolve().parent
     DATA_DIR = ROOT_DIR / "data"
-    # clip_model: str = "ViT-B/32"
-    clip_model: str = "ViT-L/14@336px"
+    clip_model: str = "ViT-B/32"
+    # clip_model: str = "ViT-L/14@336px"
     window_size: int = 30          # gate sliding window (frames)
     alpha: float = 0.3           # EMA decay (used by EPFE-EMA)
 
@@ -126,22 +126,22 @@ class SoccerNetConfig(BaseConfig):
         "england_epl/2016-2017/2016-12-27 - 20-15 Liverpool 4 - 1 Stoke City/2_224p.mkv",
         "england_epl/2016-2017/2016-12-31 - 20-30 Liverpool 1 - 0 Manchester City/1_224p.mkv",
         "england_epl/2016-2017/2016-12-31 - 20-30 Liverpool 1 - 0 Manchester City/2_224p.mkv",
-        #"england_epl/2016-2017/2017-01-02 - 15-30 Middlesbrough 0 - 0 Leicester/1_224p.mkv",
-        #"england_epl/2016-2017/2017-01-02 - 15-30 Middlesbrough 0 - 0 Leicester/2_224p.mkv",
-        #"england_epl/2016-2017/2017-01-02 - 18-00 Sunderland 2 - 2 Liverpool/1_224p.mkv",
-        #"england_epl/2016-2017/2017-01-02 - 18-00 Sunderland 2 - 2 Liverpool/2_224p.mkv",
-        #"england_epl/2016-2017/2017-01-14 - 20-30 Leicester 0 - 3 Chelsea/1_224p.mkv",
-        #"england_epl/2016-2017/2017-01-14 - 20-30 Leicester 0 - 3 Chelsea/2_224p.mkv",
-        #"england_epl/2016-2017/2017-01-15 - 19-00 Manchester United 1 - 1 Liverpool/1_224p.mkv",
-        #"england_epl/2016-2017/2017-01-15 - 19-00 Manchester United 1 - 1 Liverpool/2_224p.mkv",
-        #"england_epl/2016-2017/2017-01-31 - 23-00 Liverpool 1 - 1 Chelsea/1_224p.mkv",
-        #"england_epl/2016-2017/2017-01-31 - 23-00 Liverpool 1 - 1 Chelsea/2_224p.mkv",
-        #"england_epl/2016-2017/2017-02-27 - 23-00 Leicester 3 - 1 Liverpool/1_224p.mkv",
-        #"england_epl/2016-2017/2017-02-27 - 23-00 Leicester 3 - 1 Liverpool/2_224p.mkv",
-        #"england_epl/2016-2017/2017-04-26 - 21-45 Arsenal 1 - 0 Leicester/1_224p.mkv",
-        #"england_epl/2016-2017/2017-04-26 - 21-45 Arsenal 1 - 0 Leicester/2_224p.mkv",
-        #"england_epl/2016-2017/2017-05-13 - 14-30 Manchester City 2 - 1 Leicester/1_224p.mkv",
-        #"england_epl/2016-2017/2017-05-13 - 14-30 Manchester City 2 - 1 Leicester/2_224p.mkv",
+        "england_epl/2016-2017/2017-01-02 - 15-30 Middlesbrough 0 - 0 Leicester/1_224p.mkv",
+        "england_epl/2016-2017/2017-01-02 - 15-30 Middlesbrough 0 - 0 Leicester/2_224p.mkv",
+        "england_epl/2016-2017/2017-01-02 - 18-00 Sunderland 2 - 2 Liverpool/1_224p.mkv",
+        "england_epl/2016-2017/2017-01-02 - 18-00 Sunderland 2 - 2 Liverpool/2_224p.mkv",
+        "england_epl/2016-2017/2017-01-14 - 20-30 Leicester 0 - 3 Chelsea/1_224p.mkv",
+        "england_epl/2016-2017/2017-01-14 - 20-30 Leicester 0 - 3 Chelsea/2_224p.mkv",
+        "england_epl/2016-2017/2017-01-15 - 19-00 Manchester United 1 - 1 Liverpool/1_224p.mkv",
+        "england_epl/2016-2017/2017-01-15 - 19-00 Manchester United 1 - 1 Liverpool/2_224p.mkv",
+        "england_epl/2016-2017/2017-01-31 - 23-00 Liverpool 1 - 1 Chelsea/1_224p.mkv",
+        "england_epl/2016-2017/2017-01-31 - 23-00 Liverpool 1 - 1 Chelsea/2_224p.mkv",
+        "england_epl/2016-2017/2017-02-27 - 23-00 Leicester 3 - 1 Liverpool/1_224p.mkv",
+        "england_epl/2016-2017/2017-02-27 - 23-00 Leicester 3 - 1 Liverpool/2_224p.mkv",
+        "england_epl/2016-2017/2017-04-26 - 21-45 Arsenal 1 - 0 Leicester/1_224p.mkv",
+        "england_epl/2016-2017/2017-04-26 - 21-45 Arsenal 1 - 0 Leicester/2_224p.mkv",
+        "england_epl/2016-2017/2017-05-13 - 14-30 Manchester City 2 - 1 Leicester/1_224p.mkv",
+        "england_epl/2016-2017/2017-05-13 - 14-30 Manchester City 2 - 1 Leicester/2_224p.mkv",
     ]
 
 class Ego4DConfig(BaseConfig):

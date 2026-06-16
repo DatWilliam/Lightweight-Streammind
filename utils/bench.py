@@ -1,3 +1,19 @@
+"""
+Single-frame (batch=1) streaming benchmark for the EMA pipeline.
+
+Runs over the WHOLE split (every video, every frame) and measures:
+  - throughput (frames/s)
+  - per-frame latency, split by component:
+      decode | preprocess | encode (GPU incl. transfer) | score (EMA) | gate
+  - peak memory: process RSS (RAM) and CUDA allocated/reserved (VRAM)
+
+Gate and EMA state are reset per video (matching eval.eval). GPU work is timed
+with torch.cuda.synchronize() so the encode time is real (CUDA calls are async
+otherwise). The first `warmup` frames are excluded from the stats.
+
+Note: on Jetson (Orin NX) CPU and GPU share one physical LPDDR pool (unified
+memory), so "VRAM" here is the CUDA allocation, not separate physical memory.
+"""
 import argparse
 import importlib
 import resource
@@ -29,20 +45,18 @@ def _loaders(dataset: str):
 def _stats_ms(times_s):
     a = np.asarray(times_s, dtype=np.float64) * 1000.0  # -> ms
     return {
-        "mean": float(a.mean()),
-        "p50":  float(np.percentile(a, 50)),
-        "p95":  float(np.percentile(a, 95)),
+        "mean": float(a.mean()) if len(a) else 0.0,
+        "p50":  float(np.percentile(a, 50)) if len(a) else 0.0,
+        "p95":  float(np.percentile(a, 95)) if len(a) else 0.0,
     }
 
 
-def run_bench(dataset: str, split: str, video_index: int, frames: int,
-              warmup: int, gate_mode: str, alpha: float = None):
+def run_bench(dataset: str, split: str, warmup: int, gate_mode: str, alpha: float = None):
     config = load_config(dataset)
     if alpha is not None:
         config.alpha = alpha
 
     video_ids = getattr(config, f"video_ids_{split}")
-    video_id = video_ids[video_index]
     get_video_path, load_video = _loaders(dataset)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -50,21 +64,13 @@ def run_bench(dataset: str, split: str, video_index: int, frames: int,
 
     print(f"Device: {device} | CLIP: {config.clip_model} | gate: {gate_mode} "
           f"| alpha: {config.alpha}")
-    print(f"Video: {get_video_path(video_id).name}  (split={split}, index={video_index})")
-    print(f"Warmup: {warmup} frames | Measured: {frames} frames | batch=1\n")
+    print(f"Split: {split} | videos: {len(video_ids)} | warmup: {warmup} frames | batch=1\n")
 
     epfe = EPFE(config)          # loads + freezes CLIP on the GPU
     model, preprocess = epfe.model, epfe.preprocess
-    gate = EventGate(config)
-
-    state = None
-    alpha_v = config.alpha
     comps = {k: [] for k in ("decode", "preprocess", "encode", "score", "gate")}
 
-    gen = load_video(video_id)
-
-    def step(frame, frame_idx, record):
-        nonlocal state
+    def step(frame, frame_idx, gate, state, record):
         # preprocess (CPU): BGR->RGB, PIL, CLIP transform
         t0 = time.perf_counter()
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -87,7 +93,7 @@ def run_bench(dataset: str, split: str, video_index: int, frames: int,
             score = 0.0
         else:
             score = float(np.linalg.norm(feat - state))
-            state = alpha_v * feat + (1.0 - alpha_v) * state
+            state = config.alpha * feat + (1.0 - config.alpha) * state
         t3 = time.perf_counter()
 
         # gate
@@ -99,33 +105,54 @@ def run_bench(dataset: str, split: str, video_index: int, frames: int,
             comps["encode"].append(t2 - t1)
             comps["score"].append(t3 - t2)
             comps["gate"].append(t4 - t3)
+        return state
 
-    # ---- warmup (not recorded): stabilises CUDA init / cudnn autotune ----
-    idx = 0
-    for _ in range(warmup):
-        try:
-            frame = next(gen)
-        except StopIteration:
-            break
-        idx += 1
-        step(frame, idx, record=False)
+    processed = 0       # total frames seen (incl. warmup)
+    measured = 0        # frames counted into stats
+    wall0 = None
+    n_videos = len(video_ids)
 
-    # ---- measured loop ----
-    if device == "cuda":
-        torch.cuda.reset_peak_memory_stats()
-    measured = 0
-    wall0 = time.perf_counter()
-    while measured < frames:
-        td0 = time.perf_counter()
-        try:
-            frame = next(gen)
-        except StopIteration:
-            break
-        td1 = time.perf_counter()
-        idx += 1
-        comps["decode"].append(td1 - td0)
-        step(frame, idx, record=True)
-        measured += 1
+    for vi, video_id in enumerate(video_ids, 1):
+        if not get_video_path(video_id).exists():
+            print(f"[{vi}/{n_videos}] [skip] missing video: {video_id}", flush=True)
+            continue
+
+        gate = EventGate(config)
+        state = None
+        frame_idx = 0
+        vid_measured = 0
+        gen = load_video(video_id)
+
+        while True:
+            td0 = time.perf_counter()
+            try:
+                frame = next(gen)
+            except StopIteration:
+                break
+            td1 = time.perf_counter()
+            frame_idx += 1
+
+            record = processed >= warmup
+            if record and wall0 is None:
+                # first measured frame: reset peak mem + start the wall clock
+                if device == "cuda":
+                    torch.cuda.reset_peak_memory_stats()
+                wall0 = time.perf_counter()
+            if record:
+                comps["decode"].append(td1 - td0)
+
+            state = step(frame, frame_idx, gate, state, record)
+            processed += 1
+            if record:
+                measured += 1
+                vid_measured += 1
+
+        name = get_video_path(video_id).name
+        print(f"[{vi}/{n_videos}] {name}: {vid_measured} frames", flush=True)
+
+    if wall0 is None or measured == 0:
+        print("\nNo frames measured (warmup >= total frames?).")
+        return
     wall = time.perf_counter() - wall0
 
     # ---- memory ----
@@ -139,9 +166,9 @@ def run_bench(dataset: str, split: str, video_index: int, frames: int,
     per_frame_total_ms = (wall / measured) * 1000.0
     fps = measured / wall
 
-    print("=" * 60)
-    print(f"Frames measured : {measured}")
-    print(f"Wall time       : {wall:.2f} s")
+    print("\n" + "=" * 60)
+    print(f"Frames measured : {measured}  (over {n_videos} videos)")
+    print(f"Wall time       : {wall:.1f} s")
     print(f"Throughput      : {fps:.1f} fps")
     print(f"Latency/frame   : {per_frame_total_ms:.2f} ms  (end-to-end, wall/frames)")
     print("-" * 60)
@@ -165,11 +192,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset", choices=["soccernet", "ego4d"], default="soccernet", nargs="?")
     parser.add_argument("--split", choices=["train", "val", "test"], default="test")
-    parser.add_argument("--video-index", type=int, default=0, help="index into video_ids_<split>")
-    parser.add_argument("--frames", type=int, default=2000, help="measured frames (after warmup)")
     parser.add_argument("--warmup", type=int, default=50, help="warmup frames (excluded)")
     parser.add_argument("--gate", choices=list(GATE_MODULES.keys()), default="full")
     parser.add_argument("--alpha", type=float, default=None, help="EMA decay (overrides config)")
     args = parser.parse_args()
-    run_bench(args.dataset, args.split, args.video_index, args.frames,
-              args.warmup, args.gate, args.alpha)
+    run_bench(args.dataset, args.split, args.warmup, args.gate, args.alpha)
