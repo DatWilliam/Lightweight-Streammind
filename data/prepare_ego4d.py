@@ -7,27 +7,22 @@ from config import load_config
 
 cfg = load_config("ego4d")
 
-# videos may live in either location; first match wins
-VIDEO_DIRS = [
-    Path("/mnt/hdd/liam_wipperfuerth/v2/video_540ss"),  # external HDD
-    cfg.DATA_DIR / "ego4d" / "v2" / "video_540ss",       # in-project
-]
+VIDEO_DIR = Path("/mnt/hdd/liam_wipperfuerth/v2/video_540ss")
+
 # caches always on SSD, regardless of video location
 CACHE_DIR = cfg.DATA_DIR / "ego4d" / "v2" / "cache"
 NARRATION_PATH = cfg.DATA_DIR / "ego4d" / "v2" / "annotations" / "narration.json"
 
 _NARRATIONS: Optional[Dict[str, List[Dict]]] = None
 
-
 def _load_narrations() -> Dict[str, List[Dict]]:
-    """
-    Parse narration.json once, bucket events per video_uid.
-    Following StreamMind Algorithm 1:
-      - keep only #C narrations (camera wearer actions)
-      - merge consecutive identical texts (keep first timestamp)
-      - start_frame = round(timestamp_sec * cfg.fps), matches sampling rate
-    Both annotator passes are merged; on frame collisions the first wins.
-    """
+    # Load narration.json once and store in _NARRATIONS, keyed by UID
+    # Following StreamMind Alg. 1
+    #   Keep only #C narrations (camera wearer actions)
+    #   Merge consecutive identical texts (keep first timestamp)
+    #   Map timestamps to frames
+    # If two events land on the same frame index, throw the later one away
+
     global _NARRATIONS
     if _NARRATIONS is not None:
         return _NARRATIONS
@@ -96,12 +91,7 @@ def load_video_labels(video_id: str) -> List[Dict]:
 
 
 def get_video_path(video_id: str) -> Path:
-    # search all VIDEO_DIRS; fall back to first dir if not found
-    for d in VIDEO_DIRS:
-        p = d / f"{video_id}.mp4"
-        if p.exists():
-            return p
-    return VIDEO_DIRS[0] / f"{video_id}.mp4"
+    return VIDEO_DIR / f"{video_id}.mp4"
 
 
 def get_cache_path(video_id: str) -> Path:

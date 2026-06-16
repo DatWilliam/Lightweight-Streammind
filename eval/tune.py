@@ -6,14 +6,17 @@ from config import load_config
 from utils.eval_func import per_video_metrics, macro_average, count_phase_fp
 
 EPFE_MODULES = {
-    "mamba": ("model.epfe_cached", "EPFECached"),
-    "ema":   ("model.epfe_ema",    "EPFEEMACached"),
+    "mamba": ("model.epfe_mamba_cached", "EPFECached"),
+    "ema":   ("model.epfe_ema_cached",   "EPFEEMACached"),
 }
+
+# Grid search over gate (and alpha) hyperparameters on val,
+# then cross-check top combos on the held-out split.
 
 
 def _precompute_scores(config, dataset: str, video_ids: list, weights: str,
                         use_mamba: bool, epfe_mode: str = "mamba") -> dict:
-    # load EPFE once, run bulk inference per video
+    # load EPFE once, bulk-score every cached video; reused across all combos
     if dataset == "ego4d":
         from data.prepare_ego4d import load_video_labels, get_cache_path
     else:
@@ -46,8 +49,11 @@ def _precompute_scores(config, dataset: str, video_ids: list, weights: str,
     return video_scores
 
 
+# vectorized re-implementations of the three gates
+# Functionally identical to model/gate*.py, just faster for sweep loops.
+
 def _sliding_mean_std(scores: np.ndarray, window_size: int):
-    # returns (win_mean, win_std) for each full window starting at index i
+    # vectorized mean+std for every length-window_size window over scores
     shape = (len(scores) - window_size + 1, window_size)
     strides = (scores.strides[0], scores.strides[0])
     windows = np.lib.stride_tricks.as_strided(scores, shape=shape, strides=strides)
@@ -55,7 +61,7 @@ def _sliding_mean_std(scores: np.ndarray, window_size: int):
 
 
 def _triggers_fixed(scores: np.ndarray, frame_idx: list, threshold: float, cooldown: int):
-    # gate_fixed: score > threshold + cooldown
+    # gate_fixed: score > threshold, respect cooldown
     trigger_frames = []
     last_event_frame = -cooldown
     for i, score in enumerate(scores):
@@ -67,7 +73,7 @@ def _triggers_fixed(scores: np.ndarray, frame_idx: list, threshold: float, coold
 
 
 def _triggers_th(scores: np.ndarray, frame_idx: list, k: float, window_size: int, cooldown: int):
-    # gate_th: adaptive threshold (mean + k*std), no confirmation stage
+    # gate_th: adaptive threshold mean+k*std, no confirmation
     N = len(scores)
     if N < window_size:
         return []
@@ -89,7 +95,7 @@ def _triggers_th(scores: np.ndarray, frame_idx: list, k: float, window_size: int
 
 def _triggers_full(scores: np.ndarray, frame_idx: list,
                    k, window_size, confirm_frames, cooldown) -> list:
-    # gate.py (full): adaptive threshold + 2-stage confirmation
+    # gate (full): adaptive threshold + 2-stage confirmation
     N = len(scores)
     if N < window_size:
         return []
@@ -131,10 +137,11 @@ def _triggers_full(scores: np.ndarray, frame_idx: list,
 
 
 def _eval_gate(video_scores: dict, config, gate_mode: str = "full") -> dict:
-    # run gate on precomputed scores, macro-average metrics across all videos
+    # one full eval pass for one combo: gate -> match -> per-video metrics -> macro avg
     per_video = []
 
     for v in video_scores.values():
+        # 1. run the chosen gate on the cached scores
         if gate_mode == "fixed":
             trigger_frames = _triggers_fixed(
                 v["scores"], v["frame_idx"], config.fixed_threshold, config.cooldown,
@@ -148,6 +155,8 @@ def _eval_gate(video_scores: dict, config, gate_mode: str = "full") -> dict:
                 v["scores"], v["frame_idx"],
                 config.k, config.window_size, config.confirm_frames, config.cooldown,
             )
+
+        # 2. greedy 1:1-matching GT
         gt_events = v["gt_events"]
         used_triggers = set()
         for gt in gt_events:
@@ -158,6 +167,7 @@ def _eval_gate(video_scores: dict, config, gate_mode: str = "full") -> dict:
                 closest = min(matches, key=lambda x: abs(x - gt["start_frame"]))
                 used_triggers.add(closest)
 
+        # 3. for metrics
         tp = len(used_triggers)
         false_triggers = [t for t in trigger_frames if t not in used_triggers]
         gt_starts = [e["start_frame"] for e in gt_events]
@@ -168,6 +178,7 @@ def _eval_gate(video_scores: dict, config, gate_mode: str = "full") -> dict:
         if m is not None:
             per_video.append(m)
 
+    # macro-avg: per-video metric, then mean across videos
     avg = macro_average(per_video)
     return {
         "f1":          round(avg["f1"],          4),
@@ -208,11 +219,11 @@ def _print_results(results: list, top_n: int, gate_mode: str = "full", epfe_mode
 
 def _build_combos(config, gate_mode: str, k_values, confirm_frames_values, threshold_values,
                   window_size_values=None):
-    # Default-Sweep-Bereiche aus der Dataset-Config; CLI-Overrides haben Vorrang.
+    # sweep ranges default from dataset config; CLI overrides win
     if gate_mode == "fixed":
         if threshold_values is None:
             threshold_values = config.fixed_threshold_sweep
-        # fixed-Gate hat keine Sliding-Window-Statistik → window_size irrelevant.
+        # fixed gate has no sliding-window stats -> window_size irrelevant
         return [{"fixed_threshold": t} for t in threshold_values]
     if window_size_values is None:
         window_size_values = config.window_size_sweep
@@ -245,7 +256,8 @@ def tune_params(
     config = load_config(dataset)
     video_ids = getattr(config, f"video_ids_{split}")
 
-    # alpha is an outer loop only for EMA (changes the scores)
+    # alpha is an outer loop only for EMA (changes the underlying scores).
+    # For mamba there is one "alpha-pass" with value None.
     if epfe_mode == "ema":
         if alpha_values is None:
             alpha_values = config.alpha_sweep
@@ -258,6 +270,7 @@ def tune_params(
     print(f"Sweep: {total_combos} combinations "
           f"({len(alpha_values)} alpha x {len(combos)} gate)")
 
+    # the held-out split that we cross-check the top combos on
     other_split = "test" if split in ("train", "val") else "train"
     other_ids = getattr(config, f"video_ids_{other_split}", [])
 
@@ -265,6 +278,7 @@ def tune_params(
     val_scores_by_alpha = {}
     test_scores_by_alpha = {}
 
+    # ── main sweep on val: precompute once per alpha, then loop all gate combos ──
     results = []
     progress = 0
     for ai, alpha_val in enumerate(alpha_values, 1):
@@ -274,6 +288,7 @@ def tune_params(
         val_scores_by_alpha[alpha_val] = video_scores
 
         for combo in combos:
+            # apply combo by mutating config, then evaluate
             for key, val in combo.items():
                 setattr(config, key, val)
             metrics = _eval_gate(video_scores, config, gate_mode)
@@ -283,11 +298,12 @@ def tune_params(
             results.append(entry)
             progress += 1
 
-        # Heartbeat: ein Print pro Alpha-Durchlauf
+        # heartbeat: one line per alpha pass
         best = max(results, key=lambda x: x["f1"])
         tag = f"alpha={alpha_val} " if alpha_val is not None else ""
         print(f"  [{ai}/{len(alpha_values)}] {tag}-> {progress}/{total_combos} combos | best F1 so far: {best['f1']:.4f}")
 
+    # pick top combos on val (by F1 and TimVal independently)
     by_f1 = sorted(results, key=lambda x: x["f1"], reverse=True)
     by_tim = sorted(results, key=lambda x: x["tim_val"], reverse=True)
     top3_f1 = by_f1[:3]
@@ -296,7 +312,7 @@ def tune_params(
     if not other_ids:
         return by_f1[0]
 
-    # cross-check on held-out split: precompute test scores per used alpha
+    # ── cross-check: precompute test scores only for alphas the top combos use ──
     used_alphas = {c.get("alpha") for c in top3_f1 + top3_tim}
     for alpha_val in used_alphas:
         if alpha_val is not None:
@@ -306,6 +322,7 @@ def tune_params(
         )
 
     def _eval_candidates(candidates, label):
+        # re-evaluate each candidate combo on the held-out split
         param_keys = [k for _, k, _ in _param_keys(gate_mode, epfe_mode)]
         out = []
         for c in candidates:

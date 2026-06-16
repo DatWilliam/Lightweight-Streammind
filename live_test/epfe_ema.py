@@ -5,46 +5,9 @@ import torch
 import numpy as np
 
 
-class EPFEEMACached:
-    """
-    EMA baseline on cached CLIP features. Parameter-free: score = ||feat - state||,
-    state updated as state <- alpha * feat + (1 - alpha) * state.
-    Mirrors EPFECached interface (score_video, eval, load_weights) for drop-in use.
-    """
-
-    def __init__(self, cfg, use_mamba: bool = True):
-        # use_mamba is accepted for interface parity, but ignored
-        self.alpha = cfg.alpha
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    def score_video(self, features_np, batch_size: int = 256):
-        N = len(features_np)
-        scores = np.zeros(N, dtype=np.float32)
-        if N == 0:
-            return scores
-        # Cache ist schon float32 → kein astype noetig.
-        feats = np.ascontiguousarray(features_np, dtype=np.float32)
-        state = feats[0].copy()
-        alpha = np.float32(self.alpha)
-        one_minus_alpha = np.float32(1.0 - alpha)
-        for i in range(1, N):
-            feat = feats[i]
-            delta = feat - state
-            # np.dot ist deutlich schneller als np.linalg.norm bei kleinen Vektoren
-            scores[i] = np.sqrt(np.dot(delta, delta))
-            state = alpha * feat + one_minus_alpha * state
-        return scores
-
-    def eval(self):
-        # no-op, kept for interface parity
-        pass
-
-    def load_weights(self, path):
-        # no learnable params, kept for interface parity
-        pass
-
-
 class EPFE:
+    """Live EMA-EPFE: CLIP per frame + L2-distance to EMA-state. Parameter-free."""
+
     def __init__(self, cfg):
         self.state = None
         self.alpha = cfg.alpha

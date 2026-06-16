@@ -24,12 +24,6 @@ def _paths(dataset: str, video_id: str) -> tuple:
 
 
 def extract_features(video_path: Path, model, preprocess, device, sample_stride: int = 1) -> tuple:
-    """
-    Extract per-frame CLIP features.
-      sample_stride=1  -> every frame
-      sample_stride=15 -> every 15th frame (30 fps -> 2 fps)
-    Output frame_idx is 1-indexed at the target fps (1, 2, 3, ...).
-    """
     frame_indices, features = [], []
     batch_frames, batch_indices = [], []
 

@@ -1,7 +1,7 @@
 from tqdm import tqdm
 import argparse
 from config import load_config
-from model.epfe import EPFE
+from live_test.epfe import EPFE
 from model.gate import EventGate
 from utils.eval_func import per_video_metrics, macro_average, count_phase_fp
 
@@ -21,6 +21,7 @@ def run_eval(dataset: str, split: str):
     skipped_no_gt = 0
 
     for video_id in video_ids:
+        # refresh instances per video for clean buffer/state
         gate = EventGate(config)
         epfe = EPFE(config)
         gt_events = load_video_labels(video_id)
@@ -28,6 +29,7 @@ def run_eval(dataset: str, split: str):
         batch_frames, batch_indices = [], []
         n_frames = get_frame_count([video_id])
 
+        # Read video frame-by-frame, send it in batches through CLIP+EPFE
         for frame_idx, frame in enumerate(tqdm(load_video(video_id), total=n_frames, desc=video_id), start=1):
             batch_frames.append(frame)
             batch_indices.append(frame_idx)
@@ -39,12 +41,14 @@ def run_eval(dataset: str, split: str):
                         trigger_frames.append(int(triggered))
                 batch_frames, batch_indices = [], []
 
+        # rest batch after video ends
         if batch_frames:
             for idx, feat in zip(batch_indices, epfe.process_batch(batch_frames)):
                 triggered = gate.check_event(feat, idx)
                 if triggered is not False:
                     trigger_frames.append(int(triggered))
 
+        # greedy 1:1-matching GT
         used_triggers = set()
         for gt in gt_events:
             matches = [t for t in trigger_frames
@@ -53,17 +57,20 @@ def run_eval(dataset: str, split: str):
                 closest = min(matches, key=lambda x: abs(x - gt["start_frame"]))
                 used_triggers.add(closest)
 
+        # for metrics
         tp = len(used_triggers)
         false_triggers = [t for t in trigger_frames if t not in used_triggers]
         gt_starts = [e["start_frame"] for e in gt_events]
         fp_phase = count_phase_fp(false_triggers, gt_starts)
 
+        # Ignore videos with no GT event
         v = per_video_metrics(tp, fp_phase, len(gt_events), len(trigger_frames), n_frames)
         if v is None:
             skipped_no_gt += 1
             continue
         per_video.append(v)
 
+    # macro-avg: store metrics per video
     avg = macro_average(per_video)
     metrics = {
         "F1_SCORE":         round(avg["f1"],          3),

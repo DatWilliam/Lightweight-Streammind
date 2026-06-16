@@ -5,13 +5,13 @@ from config import load_config
 from utils.eval_func import per_video_metrics, macro_average, count_phase_fp
 
 GATE_MODULES = {
-    "full":  "model.gate",
+    "full":  "model.gate", # confirmation gate
     "th":    "model.gate_th",
     "fixed": "model.gate_fixed",
 }
 EPFE_MODULES = {
-    "mamba": ("model.epfe_cached", "EPFECached"),
-    "ema":   ("model.epfe_ema",    "EPFEEMACached"),
+    "mamba": ("model.epfe_mamba_cached", "EPFECached"),
+    "ema":   ("model.epfe_ema_cached",   "EPFEEMACached"),
 }
 
 
@@ -22,6 +22,7 @@ def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = Tr
     else:
         from data.prepare_soccernet import load_video_labels, get_cache_path
 
+    # dynamically load gate and EPFE module per flag
     EventGate = importlib.import_module(GATE_MODULES[gate_mode]).EventGate
     epfe_module, epfe_class = EPFE_MODULES[epfe_mode]
     EPFECls = getattr(importlib.import_module(epfe_module), epfe_class)
@@ -54,8 +55,10 @@ def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = Tr
         gt_events = load_video_labels(video_id)
         data = np.load(str(cache_path))
 
+        # EPFE scores for all cached frames in one go
         scores = epfe.score_video(data["features"])
 
+        # send gate through scores frame-by-frame, collect triggers
         gate = EventGate(config)
         trigger_frames = []
         for frame_idx, score in zip(data["frame_idx"].tolist(), scores):
@@ -64,6 +67,7 @@ def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = Tr
             if triggered is not False:
                 trigger_frames.append(int(triggered))
 
+        # greedy 1:1-matching GT
         used_triggers = set()
         for gt in gt_events:
             matches = [t for t in trigger_frames
@@ -72,18 +76,21 @@ def run_eval(dataset: str, split: str, weights: str = None, use_mamba: bool = Tr
                 closest = min(matches, key=lambda x: abs(x - gt["start_frame"]))
                 used_triggers.add(closest)
 
+        # for metrics
         tp = len(used_triggers)
         false_triggers = [t for t in trigger_frames if t not in used_triggers]
         gt_starts = [e["start_frame"] for e in gt_events]
         fp_phase = count_phase_fp(false_triggers, gt_starts)
         n_frames = int(data["frame_idx"][-1])
 
+        # Ignore videos with no GT event
         v = per_video_metrics(tp, fp_phase, len(gt_events), len(trigger_frames), n_frames)
         if v is None:
             skipped_no_gt += 1
             continue
         per_video.append(v)
 
+    # macro-avg: store metrics per video
     avg = macro_average(per_video)
     metrics = {
         "F1_SCORE":         round(avg["f1"],          3),

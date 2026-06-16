@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from config import load_config
-from model.epfe_cached import EPFECached
+from model.epfe_mamba_cached import EPFECached
 from data.dataset import EPFEDataset
 
 CHECKPOINT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "checkpoints")
@@ -12,7 +12,7 @@ os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 
 def focal_loss(logits, targets, gamma: float = 2.0, pos_weight=None):
-    # gamma=0 reduces to standard weighted BCE
+    # weighted BCE + focal factor (1-pt)^gamma; gamma=0 -> plain weighted BCE
     bce = F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight, reduction="none")
     pt = torch.exp(-bce)
     return ((1 - pt) ** gamma * bce).mean()
@@ -20,12 +20,13 @@ def focal_loss(logits, targets, gamma: float = 2.0, pos_weight=None):
 
 def train(dataset: str, epochs: int = 20, lr: float = 1e-3, batch_size: int = 64,
           gamma: float = 2.0, patience: int = 0, use_mamba: bool = True):
+    # trains the Mamba EPFE on cached CLIP features, saves best checkpoint by val-loss
     config = load_config(dataset)
 
+    # build train + (optional) val loaders from cached .npz features
     train_set = EPFEDataset(config, dataset, split="train")
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=0)
 
-    # val split is optional; falls back to train-loss-based checkpointing if missing
     has_val = bool(getattr(config, "video_ids_val", []))
     val_loader = None
     if has_val:
@@ -35,16 +36,18 @@ def train(dataset: str, epochs: int = 20, lr: float = 1e-3, batch_size: int = 64
     epfe = EPFECached(config, use_mamba=use_mamba)
     epfe.train()
 
+    # pos_weight rebalances ~99% negative frames in BCE
     pos_weight = torch.tensor([train_set.pos_weight]).to(epfe.device)
     optimizer = torch.optim.Adam(epfe.parameters(), lr=lr)
 
     best_metric = float("inf")
     metric_name = "val_loss" if has_val else "train_loss"
     epochs_no_improve = 0
+    # checkpoint name reflects ablation: epfe_<dataset>.pt or epfe_<dataset>_nomamba.pt
     checkpoint_path = os.path.join(CHECKPOINT_DIR, f"epfe_{dataset}{'_nomamba' if not use_mamba else ''}.pt")
 
     for epoch in range(1, epochs + 1):
-        # train
+        # train pass
         epfe.train()
         train_loss = 0.0
         for features, labels in train_loader:
@@ -58,7 +61,7 @@ def train(dataset: str, epochs: int = 20, lr: float = 1e-3, batch_size: int = 64
             train_loss += loss.item()
         train_loss /= len(train_loader)
 
-        # validate
+        # val pass (no gradients)
         val_loss = float("nan")
         if has_val:
             epfe.eval()
@@ -76,7 +79,7 @@ def train(dataset: str, epochs: int = 20, lr: float = 1e-3, batch_size: int = 64
         else:
             print(f"Epoch {epoch:>3}/{epochs} — Loss: {train_loss:.4f}")
 
-        # checkpoint best, early-stop on plateau
+        # save checkpoint only when the tracked metric improves, early-stop on plateau
         current_metric = val_loss if has_val else train_loss
         if current_metric < best_metric:
             best_metric = current_metric

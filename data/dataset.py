@@ -4,13 +4,8 @@ from torch.utils.data import Dataset
 
 
 class EPFEDataset(Dataset):
-    """
-    Cached-feature dataset for EPFE training.
-
-    Loads CLIP features from .npz cache, builds frame-level binary labels
-    (event_radius window around each GT event), and slices into
-    non-overlapping sequences of buffer_size frames.
-    """
+    # Dataset for training the trainable (Mamba) EPFE variant.
+    # EMA-EPFE has no learnable params and does not use this.
 
     def __init__(self, cfg, dataset: str, split: str, event_radius: int = None):
         if event_radius is None:

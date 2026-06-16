@@ -1,11 +1,7 @@
 import bisect
 
-
+# amount of distinct silence phases with a least one false trigger
 def count_phase_fp(false_triggers, gt_start_frames) -> int:
-    """Anzahl distinkter Silence-Phasen, die mindestens einen False-Trigger
-    enthalten. Bei N sortierten GT-Events gibt es N+1 Phasen (vor dem ersten,
-    zwischen je zweien, nach dem letzten). Mehrere Trigger in derselben Phase
-    zaehlen nur einmal; Ergebnis ist auf N+1 gedeckelt."""
     if not false_triggers:
         return 0
     if not gt_start_frames:
@@ -16,8 +12,6 @@ def count_phase_fp(false_triggers, gt_start_frames) -> int:
 
 def per_video_metrics(tp: int, fp_phase: int, gt_events: int,
                       n_triggers: int, n_frames: int) -> dict:
-    """Vollstaendige Metriken fuer EIN Video. Gibt None zurueck, wenn das Video
-    keine GT-Events hat (recall/timval undefiniert -> aus Macro-Mittel ausschliessen)."""
     if gt_events == 0:
         return None
     fn = gt_events - tp
@@ -40,7 +34,6 @@ def per_video_metrics(tp: int, fp_phase: int, gt_events: int,
 
 
 def macro_average(per_video: list) -> dict:
-    """Macro-Mittelwert ueber Videos. Erwartet Liste von Dicts aus per_video_metrics."""
     if not per_video:
         return {k: 0.0 for k in ("f1", "precision", "recall", "call_red", "tim_val", "trigger_acc")}
     n = len(per_video)
@@ -48,7 +41,7 @@ def macro_average(per_video: list) -> dict:
     return {k: sum(v[k] for v in per_video) / n for k in keys}
 
 
-# ── Legacy (Micro) — beibehalten fuer Rueckwaerts-Kompatibilitaet / Sanity-Check ──
+# for micro avg (not used)
 def calculate_timval(llm_calls: int, detected_events: int, gt_events: int,
                      fp: int = None) -> dict:
     TP = detected_events

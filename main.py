@@ -25,13 +25,13 @@ WEIGHTS = f"checkpoints/epfe_{DATASET}.pt"
 
 
 # ------------- Training (Mamba only; EMA has no learnable params) -------------
-run(f"{PY} -m utils.train {DATASET} --epochs 100 --patience 20 --lr 1e-4")
+# run(f"{PY} -m utils.train {DATASET} --epochs 100 --patience 20 --lr 1e-4")
 
 
 # ------------- Tune: Mamba x {fixed, th, full} -------------
-run(f"{PY} -m eval.tune {DATASET} val --weights {WEIGHTS} --epfe mamba --gate fixed")
-run(f"{PY} -m eval.tune {DATASET} val --weights {WEIGHTS} --epfe mamba --gate th")
-run(f"{PY} -m eval.tune {DATASET} val --weights {WEIGHTS} --epfe mamba --gate full")
+# run(f"{PY} -m eval.tune {DATASET} val --weights {WEIGHTS} --epfe mamba --gate fixed")
+# run(f"{PY} -m eval.tune {DATASET} val --weights {WEIGHTS} --epfe mamba --gate th")
+# run(f"{PY} -m eval.tune {DATASET} val --weights {WEIGHTS} --epfe mamba --gate full")
 
 
 # ------------- Tune: EMA x {fixed, th, full} -------------
