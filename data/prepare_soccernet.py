@@ -8,12 +8,8 @@ from config import load_config
 cfg = load_config("soccernet")
 
 
+# read the events of one half from Labels-v2.json (positions are ms since kickoff)
 def load_video_labels(video_id: str) -> List[Dict]:
-    """
-    Load events for one half from Labels-v2.json.
-    video_id: path relative to data/soccernet/ (e.g. "england_epl/.../1_224p.mkv").
-    JSON 'position' is milliseconds since half kickoff.
-    """
     video_path = cfg.DATA_DIR / "soccernet" / video_id
     json_path = video_path.parent / "Labels-v2.json"
 

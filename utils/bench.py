@@ -1,19 +1,12 @@
-"""
-Single-frame (batch=1) streaming benchmark for the EMA pipeline.
+# Single-frame (batch=1) streaming benchmark for the EMA pipeline.
 
-Runs over the WHOLE split (every video, every frame) and measures:
-  - throughput (frames/s)
-  - per-frame latency, split by component:
-      decode | preprocess | encode (GPU incl. transfer) | score (EMA) | gate
-  - peak memory: process RSS (RAM) and CUDA allocated/reserved (VRAM)
+# Runs the whole split frame-by-frame and reports throughput (fps), per-frame
+# latency split by component (decode | preprocess | encode | score | gate), and
+# peak RAM/VRAM. GPU work is timed with cuda.synchronize() (CUDA is async), and
+# the first `warmup` frames are excluded.
 
-Gate and EMA state are reset per video (matching eval.eval). GPU work is timed
-with torch.cuda.synchronize() so the encode time is real (CUDA calls are async
-otherwise). The first `warmup` frames are excluded from the stats.
-
-Note: on Jetson (Orin NX) CPU and GPU share one physical LPDDR pool (unified
-memory), so "VRAM" here is the CUDA allocation, not separate physical memory.
-"""
+# Note: on Jetson the GPU shares the RAM pool (unified memory), so "VRAM" is just
+# the CUDA allocation, not separate physical memory.
 import argparse
 import importlib
 import resource
@@ -34,6 +27,7 @@ GATE_MODULES = {
 }
 
 
+# path lookup + frame-decode generator for the dataset
 def _loaders(dataset: str):
     if dataset == "ego4d":
         from data.prepare_ego4d import get_video_path, load_video
@@ -42,6 +36,7 @@ def _loaders(dataset: str):
     return get_video_path, load_video
 
 
+# list of per-frame seconds -> mean / median / p95 in ms
 def _stats_ms(times_s):
     a = np.asarray(times_s, dtype=np.float64) * 1000.0  # -> ms
     return {
@@ -70,6 +65,7 @@ def run_bench(dataset: str, split: str, warmup: int, gate_mode: str, alpha: floa
     model, preprocess = epfe.model, epfe.preprocess
     comps = {k: [] for k in ("decode", "preprocess", "encode", "score", "gate")}
 
+    # one frame through preprocess -> encode -> score -> gate; record per-component times
     def step(frame, frame_idx, gate, state, record):
         # preprocess (CPU): BGR->RGB, PIL, CLIP transform
         t0 = time.perf_counter()
@@ -117,12 +113,14 @@ def run_bench(dataset: str, split: str, warmup: int, gate_mode: str, alpha: floa
             print(f"[{vi}/{n_videos}] [skip] missing video: {video_id}", flush=True)
             continue
 
+        # fresh gate + EMA state per video (matches eval.eval)
         gate = EventGate(config)
         state = None
         frame_idx = 0
         vid_measured = 0
         gen = load_video(video_id)
 
+        # decode each frame here (timed), the rest happens in step()
         while True:
             td0 = time.perf_counter()
             try:
@@ -132,6 +130,7 @@ def run_bench(dataset: str, split: str, warmup: int, gate_mode: str, alpha: floa
             td1 = time.perf_counter()
             frame_idx += 1
 
+            # only count frames after warmup; start clock + mem peak on the first counted frame
             record = processed >= warmup
             if record and wall0 is None:
                 # first measured frame: reset peak mem + start the wall clock

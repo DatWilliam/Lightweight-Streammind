@@ -3,17 +3,10 @@ import numpy as np
 
 
 class EventGate:
-    """
-    Two-stage threshold gate over a per-frame event score stream.
-
-    Stage 1: spike detection. Trigger if score > mean + k * std on the
-             sliding window AND cooldown since last fire has elapsed.
-    Stage 2: confirmation. Stay above the mean captured at spike time
-             for `confirm_frames` consecutive frames; otherwise reject.
-
-    Reports the spike frame, not the confirmation frame.
-    """
-
+    # two-stage gate on the per-frame event score:
+    #   1) spike: fire if the score jumps above mean + k*std over the window (and cooldown is over)
+    #   2) confirm: only keep it if the score stays above the spike-time mean for confirm_frames frames
+    # reports the spike frame, not the confirmation frame
     def __init__(self, cfg):
         self.window_size = cfg.window_size
         self.cooldown = cfg.cooldown

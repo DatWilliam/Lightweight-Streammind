@@ -3,12 +3,6 @@ import numpy as np
 
 
 class EPFEEMACached:
-    """
-    EMA baseline on cached CLIP features. Parameter-free: score = ||feat - state||,
-    state updated as state <- alpha * feat + (1 - alpha) * state.
-    Exposes score_video / eval for the cached eval pipeline.
-    """
-
     def __init__(self, cfg):
         self.alpha = cfg.alpha
         self.device = "cuda" if torch.cuda.is_available() else "cpu"

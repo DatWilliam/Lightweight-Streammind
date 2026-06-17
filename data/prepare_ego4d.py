@@ -20,14 +20,12 @@ _NARRATIONS: Optional[Dict[str, List[Dict]]] = None
 
 
 def _load_narrations() -> Dict[str, List[Dict]]:
-    """
-    Parse narration.json once, bucket events per video_uid.
-    Following StreamMind Algorithm 1:
-      - keep only #C narrations (camera wearer actions)
-      - merge consecutive identical texts (keep first timestamp)
-      - start_frame = round(timestamp_sec * cfg.fps), matches sampling rate
-    Both annotator passes are merged; on frame collisions the first wins.
-    """
+    # Load narration.json once and store in _NARRATIONS, keyed by UID
+    # Following StreamMind Alg. 1
+    #   Keep only #C narrations (camera wearer actions)
+    #   Merge consecutive identical texts (keep first timestamp)
+    #   Map timestamps to frames
+    # If two events land on the same frame index, throw the later one away
     global _NARRATIONS
     if _NARRATIONS is not None:
         return _NARRATIONS
